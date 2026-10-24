@@ -1,0 +1,57 @@
+name: Bug report
+description: Something in pantech-mcp does not work as expected.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. **Security problems must not be reported here**: see SECURITY.md.
+        Never paste API keys, confirmation tokens or other secrets.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Connect the app with ...
+        2. Ask it to ...
+        3. The tool returns ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `pantech-mcp version`, or "hosted".
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Mode
+      options:
+        - Hosted (mcp.pantechdynamics.com)
+        - Local (stdio)
+        - Self-hosted (http)
+    validations:
+      required: true
+  - type: input
+    id: client
+    attributes:
+      label: AI app and version
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or error output
+      description: Include request ids if shown. Remove anything sensitive.
+      render: text

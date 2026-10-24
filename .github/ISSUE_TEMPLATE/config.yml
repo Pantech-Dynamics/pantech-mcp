@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/Pantech-Dynamics/pantech-mcp/security/advisories/new
+    about: Please report security issues privately (or email info@pantechdynamics.com), not as public issues.
+  - name: Documentation
+    url: https://docs.pantechdynamics.com/ai/connect-your-ai
+    about: Setup guides for connecting AI apps to Pantech Dynamics.

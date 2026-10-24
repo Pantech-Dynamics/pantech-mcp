@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+
+      # Until pantech-go v0.1.0 is published (and go.sum has it), build
+      # against its main branch through a workspace outside the repo.
+      - name: Use a pantech-go checkout if it is not published yet
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -q '^github.com/Pantech-Dynamics/pantech-go ' go.sum; then
+            echo "pantech-go comes from go.sum"; exit 0
+          fi
+          git clone --depth 1 https://github.com/Pantech-Dynamics/pantech-go "$RUNNER_TEMP/pantech-go"
+          cat > "$RUNNER_TEMP/go.work" <<WORK
+          go 1.25.0
+          use $GITHUB_WORKSPACE
+          use $RUNNER_TEMP/pantech-go
+          replace github.com/Pantech-Dynamics/pantech-go v0.1.0 => $RUNNER_TEMP/pantech-go
+          WORK
+          echo "GOWORK=$RUNNER_TEMP/go.work" >> "$GITHUB_ENV"
+
+      - name: gofmt
+        run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
+
+      - run: go vet ./...
+
+      - run: go test -race ./...
+
+      # Every platform we release must still build.
+      - run: make dist VERSION=ci
+
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - name: Build context for an unpublished pantech-go
+        id: sdk
+        shell: bash
+        run: |
+          if grep -q '^github.com/Pantech-Dynamics/pantech-go ' go.sum; then
+            echo "contexts=" >> "$GITHUB_OUTPUT"
+          else
+            git clone --depth 1 https://github.com/Pantech-Dynamics/pantech-go "$RUNNER_TEMP/pantech-go"
+            echo "contexts=pantech-go=$RUNNER_TEMP/pantech-go" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          build-contexts: ${{ steps.sdk.outputs.contexts }}
+          push: false
+          build-args: VERSION=ci

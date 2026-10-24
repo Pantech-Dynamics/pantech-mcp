@@ -1,0 +1,11 @@
+.git
+.github
+dist
+pantech-mcp
+*.md
+!README.md
+**/* 2*
+.DS_Store
+go.work
+go.work.sum
+*.out
