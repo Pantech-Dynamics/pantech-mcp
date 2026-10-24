@@ -15,6 +15,9 @@ FROM scratch AS pantech-go
 # Built on the runner's own platform and cross-compiled (CGO is off), so the
 # arm64 image does not compile under emulation.
 FROM --platform=$BUILDPLATFORM golang:1.25-alpine@sha256:1ae0735f00daffa3aaf1363a5184c0d2dc55c78e3db4ec70241cdac97bf84b59 AS build
+# git lets go fetch a module straight from its repository when the module
+# proxy does not have it yet (a release minutes old can briefly be missing).
+RUN apk add --no-cache git
 WORKDIR /src
 ARG VERSION=dev
 ARG TARGETOS
