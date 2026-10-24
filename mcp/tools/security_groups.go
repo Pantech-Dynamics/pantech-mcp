@@ -107,3 +107,57 @@ func diffSGRules(current, next []pantech.SecurityGroupRule) (added, removed []pa
 	}
 	return added, removed
 }
+
+type createSecurityGroupInput struct {
+	Name  string              `json:"name" jsonschema:"1 to 255 characters, unique among your security groups."`
+	Rules []securityGroupRule `json:"rules" jsonschema:"The group's rules; at least one. Inbound traffic no rule allows is dropped. Prefer narrow sources (e.g. the user's own IP as /32)."`
+}
+
+type deleteSecurityGroupInput struct {
+	SecurityGroupID string `json:"security_group_id" jsonschema:"The security group's id. No instance or database may use it."`
+	Confirmation
+}
+
+func init() {
+	// Creating a group opens nothing: it applies only once attached to an
+	// instance, which create_instance shows.
+	add(Spec{
+		Name: "create_security_group", Title: "Create a security group",
+		Description: "Create a reusable instance firewall for standard instances, with at least one rule. It protects nothing until attached (create_instance's security_group_id). Free.",
+		Risk:        Write,
+		Routes:      []string{"POST /security-groups", "GET /operations/{operation_id}"},
+	}, func(ctx context.Context, c *Call, in createSecurityGroupInput) (*Result, error) {
+		rules := updateSecurityGroupRulesInput{Rules: in.Rules}.request().Rules
+		acc, err := c.Client.SecurityGroups.Create(ctx, pantech.CreateSecurityGroupRequest{Name: in.Name, Rules: &rules}, c.writeOpts()...)
+		if err != nil {
+			return nil, err
+		}
+		return c.finish(ctx, acc, "security group "+acc.ResourceID+" created")
+	})
+
+	addConfirmed(Spec{
+		Name: "delete_security_group", Title: "Delete a security group",
+		Description: "Delete a security group and its rules. No instance or database may use it, and the organization's default group cannot be deleted. Needs an AI app connected with Manage and delete access.",
+		Risk:        Destructive, Destructive: true, Idempotent: true,
+		Routes: []string{"GET /security-groups/{security_group_id}", "DELETE /security-groups/{security_group_id}", "GET /operations/{operation_id}"},
+	}, func(ctx context.Context, c *Call, in deleteSecurityGroupInput) (*Preview, error) {
+		if err := checkIDs("security_group_id", in.SecurityGroupID); err != nil {
+			return nil, err
+		}
+		sg, err := c.Client.SecurityGroups.Get(ctx, in.SecurityGroupID)
+		if err != nil {
+			return nil, err
+		}
+		return &Preview{
+			Action:   fmt.Sprintf("Permanently delete security group %s and its %s. This cannot be undone.", sg.ID, plural(len(sg.Rules), "rule", "rules")),
+			Warnings: []string{"Pantech refuses while an instance or database uses it.", deleteAccessNote},
+			Data:     map[string]any{"security_group": sg},
+		}, nil
+	}, func(ctx context.Context, c *Call, in deleteSecurityGroupInput) (*Result, error) {
+		acc, err := c.Client.SecurityGroups.Delete(ctx, in.SecurityGroupID, c.writeOpts()...)
+		if err != nil {
+			return nil, err
+		}
+		return c.finish(ctx, acc, "security group "+in.SecurityGroupID+" deleted")
+	})
+}

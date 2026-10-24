@@ -3,6 +3,53 @@
 Releases are cut from this file: a new `## vX.Y.Z — YYYY-MM-DD` heading pushed to main is
 tagged and released (binaries on GitHub, the image on ghcr.io).
 
+## v0.2.0 — 2026-10-24
+
+### Added
+
+- Instances: `rebuild_instance` ★ and `restore_instance_snapshot` ★ (destructive: the preview says
+  what data is lost and that the AI app needs "Manage and delete" access), `get_instance_metrics`,
+  `get_instance_usage`, `list_instance_volumes`, `list_instance_snapshots`,
+  `create_instance_snapshot` ★ (priced from the snapshot quote) and `get_instance_order` (with
+  `wait` to follow the order and its create operation).
+- Temporary SSH access: `open_ssh_access` ★ opens port 22 for 15 minutes to the address Pantech
+  sees the request come from. The preview names that address as this server sees it (the caller's
+  address behind a trusted proxy; "this computer's public address" in stdio mode) and warns that
+  through a web-based AI app it is the app's server, not the user. Once confirmed it waits for the
+  grant and returns the host, port, expiry and a ready-to-run `ssh` command; the user's own SSH key
+  is never seen. `get_ssh_access`, and `revoke_ssh_access` (one step: it only closes the port).
+- Networking: `delete_network` ★, `delete_subnet` ★, `delete_public_ip` ★,
+  `list_port_forwarding_rules`, `delete_port_forwarding_rule` ★, `update_load_balancer` ★
+  (replacing targets is confirmed), `delete_load_balancer` ★, `create_security_group`,
+  `delete_security_group` ★.
+- Storage: `delete_snapshot` ★, `restore_snapshot` ★ (a new, billed volume, priced from the disk
+  offering quote), `get_snapshot_schedule`, `set_snapshot_schedule` ★ (the preview says when
+  lowering retention deletes old snapshots), `get_volume_usage`.
+- Databases: `start_database`, `stop_database`, `resize_database_storage` ★ (priced from the
+  engine's storage price), `delete_database` ★, `list_database_snapshots`,
+  `create_database_snapshot` ★, `get_database_order`.
+- Kubernetes: `delete_kubernetes_cluster` ★, `start_kubernetes_cluster`, `stop_kubernetes_cluster`,
+  `list_node_pools`, `create_node_pool` ★, `delete_node_pool` ★, `list_kubernetes_addons`,
+  `toggle_kubernetes_addon` ★, `list_cluster_nodes`, `list_cluster_workloads`.
+- SSH keys: `delete_ssh_key` ★.
+- Billing and webhooks: `get_usage_by_resource`, `list_receipts`, `list_webhook_deliveries` (read
+  only; endpoint responses are not returned).
+- Every tool that calls a route the API marks destructive is checked to be two-step and to say it
+  needs "Manage and delete" access. Kubernetes manifests (read or applied) are added to the routes no
+  tool may call, since they can hold Kubernetes secrets.
+
+### Changed
+
+- `get_credit_balance` states the available credit as an exact figure and labels the next invoice
+  as a forecast that grows with usage until the bill date, for example: "Available credit:
+  NGN 12,345.67 (exact, as of now). Next invoice so far: NGN 1,234.00 on 2026-11-01 — a forecast
+  that grows with usage until the bill date." Its description tells the app to report amounts
+  exactly, never rounded.
+- `estimate_price` says its total is an estimate; `get_usage` and the usage tools say their figures
+  are exact measured quantities. Money is formatted with integer arithmetic in each currency's minor
+  unit (kobo, cents), so no amount is rounded.
+- Temporary SSH access is no longer on the excluded list: a grant holds no secret.
+
 ## v0.1.0 — 2026-10-24
 
 First release.

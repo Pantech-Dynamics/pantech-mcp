@@ -107,7 +107,26 @@ type Env struct {
 	PollInterval time.Duration
 	// CallTimeout bounds a whole tool call. Default 110s.
 	CallTimeout time.Duration
-	Logger      *slog.Logger
+	// CallerAddress describes, for this call, the address the API sees its
+	// requests come from: what open_ssh_access opens port 22 to. Default: a
+	// generic description.
+	CallerAddress func(req *sdk.CallToolRequest) CallerAddress
+	Logger        *slog.Logger
+}
+
+// CallerAddress is the address the API sees a call's requests come from.
+type CallerAddress struct {
+	// IP is the address as this server sees it, when it knows it.
+	IP string
+	// Description says where the address comes from, in our own words.
+	Description string
+}
+
+func (e *Env) callerAddress(req *sdk.CallToolRequest) CallerAddress {
+	if e.CallerAddress != nil {
+		return e.CallerAddress(req)
+	}
+	return CallerAddress{Description: "the public address this server's requests to Pantech come from"}
 }
 
 func (e *Env) waitBudget() time.Duration {

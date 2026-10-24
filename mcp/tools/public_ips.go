@@ -174,3 +174,89 @@ func (in createPortForwardingInput) request() pantech.CreatePortForwardingRuleRe
 	}
 	return req
 }
+
+type deletePublicIPInput struct {
+	PublicIPID string `json:"public_ip_id" jsonschema:"The public IP's id. Delete its port forwarding rules and load balancers first."`
+	Confirmation
+}
+
+type deletePortForwardingInput struct {
+	RuleID     string `json:"rule_id" jsonschema:"The port forwarding rule's id."`
+	PublicIPID string `json:"public_ip_id" jsonschema:"The public IP the rule is on (to show it in the preview)."`
+	Confirmation
+}
+
+func init() {
+	addConfirmed(Spec{
+		Name: "delete_public_ip", Title: "Release a public IP",
+		Description: "Release a public IPv4 address. It goes back to the pool and may be given to someone else, so it cannot be got back; billing stops. Delete its port forwarding rules first. Needs an AI app connected with Manage and delete access.",
+		Risk:        Destructive, Destructive: true, Idempotent: true,
+		Routes: []string{"GET /public-ips/{public_ip_id}", "DELETE /public-ips/{public_ip_id}", "GET /operations/{operation_id}"},
+	}, func(ctx context.Context, c *Call, in deletePublicIPInput) (*Preview, error) {
+		if err := checkIDs("public_ip_id", in.PublicIPID); err != nil {
+			return nil, err
+		}
+		ip, err := c.Client.PublicIPs.Get(ctx, in.PublicIPID)
+		if err != nil {
+			return nil, err
+		}
+		p := &Preview{
+			Action:   fmt.Sprintf("Release public IP %s (%s). The address is lost for good: it may be given to someone else, and anything pointing at it (DNS records, clients) stops reaching your servers.", ip.ID, arg(valueOr(str(ip.Address), "not yet allocated"))),
+			Warnings: []string{deleteAccessNote},
+			Data:     map[string]any{"public_ip": ip},
+		}
+		if ip.InstanceID != nil {
+			p.Warnings = append(p.Warnings, "It is mapped to instance "+arg(*ip.InstanceID)+", which loses its public address.")
+		}
+		return p, nil
+	}, func(ctx context.Context, c *Call, in deletePublicIPInput) (*Result, error) {
+		acc, err := c.Client.PublicIPs.Delete(ctx, in.PublicIPID, c.writeOpts()...)
+		if err != nil {
+			return nil, err
+		}
+		return c.finish(ctx, acc, "public IP "+in.PublicIPID+" released")
+	})
+
+	add(Spec{
+		Name: "list_port_forwarding_rules", Title: "List port forwarding rules",
+		Description: "List the port forwarding rules of a port_forwarding public IP: which public ports reach which instance ports.",
+		Risk:        Read, Idempotent: true,
+		Routes: []string{"GET /public-ips/{public_ip_id}/port-forwarding-rules"},
+	}, func(ctx context.Context, c *Call, in publicIPInput) (*Result, error) {
+		if err := checkIDs("public_ip_id", in.PublicIPID); err != nil {
+			return nil, err
+		}
+		rules, err := c.Client.PortForwardingRules.List(ctx, in.PublicIPID)
+		if err != nil {
+			return nil, err
+		}
+		return ok(plural(len(rules), "port forwarding rule", "port forwarding rules")+" on public IP "+in.PublicIPID+".", rules)
+	})
+
+	addConfirmed(Spec{
+		Name: "delete_port_forwarding_rule", Title: "Delete a port forwarding rule",
+		Description: "Delete one port forwarding rule. Traffic to those public ports stops. Needs an AI app connected with Manage and delete access.",
+		Risk:        Destructive, Destructive: true, Idempotent: true,
+		Routes: []string{"GET /public-ips/{public_ip_id}/port-forwarding-rules/{rule_id}", "DELETE /port-forwarding-rules/{rule_id}", "GET /operations/{operation_id}"},
+	}, func(ctx context.Context, c *Call, in deletePortForwardingInput) (*Preview, error) {
+		if err := checkIDs("rule_id", in.RuleID, "public_ip_id", in.PublicIPID); err != nil {
+			return nil, err
+		}
+		r, err := c.Client.PortForwardingRules.Get(ctx, in.PublicIPID, in.RuleID)
+		if err != nil {
+			return nil, err
+		}
+		return &Preview{
+			Action: fmt.Sprintf("Delete port forwarding rule %s: %s on public IP %s to instance %s stops being forwarded.",
+				r.ID, describePorts(r.Protocol, r.PublicPortStart, r.PublicPortEnd), in.PublicIPID, arg(r.InstanceID)),
+			Warnings: []string{"Anything reaching the instance through those ports stops working once the change is done.", deleteAccessNote},
+			Data:     map[string]any{"rule": r},
+		}, nil
+	}, func(ctx context.Context, c *Call, in deletePortForwardingInput) (*Result, error) {
+		acc, err := c.Client.PortForwardingRules.Delete(ctx, in.RuleID, c.writeOpts()...)
+		if err != nil {
+			return nil, err
+		}
+		return c.finish(ctx, acc, "port forwarding rule "+in.RuleID+" deleted")
+	})
+}

@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -50,5 +51,43 @@ func init() {
 			return nil, err
 		}
 		return ok("Added SSH key "+key.ID+" (fingerprint "+key.Fingerprint+").", key)
+	})
+}
+
+type deleteSSHKeyInput struct {
+	SSHKeyID string `json:"ssh_key_id" jsonschema:"The SSH key's id, from list_ssh_keys."`
+	Confirmation
+}
+
+func init() {
+	addConfirmed(Spec{
+		Name: "delete_ssh_key", Title: "Delete an SSH key",
+		Description: "Delete an SSH public key from the account, so new instances cannot be given it. Instances that already have it keep it in authorized_keys until removed there. Needs an AI app connected with Manage and delete access.",
+		Risk:        Destructive, Destructive: true, Idempotent: true,
+		Routes: []string{"GET /ssh-keys/{ssh_key_id}", "DELETE /ssh-keys/{ssh_key_id}"},
+	}, func(ctx context.Context, c *Call, in deleteSSHKeyInput) (*Preview, error) {
+		if err := checkIDs("ssh_key_id", in.SSHKeyID); err != nil {
+			return nil, err
+		}
+		key, err := c.Client.SSHKeys.Get(ctx, in.SSHKeyID)
+		if err != nil {
+			return nil, err
+		}
+		return &Preview{
+			Action: fmt.Sprintf("Permanently delete SSH key %s (fingerprint %s) from the account. To use it again it must be added again.", key.ID, arg(key.Fingerprint)),
+			Warnings: []string{
+				"Instances that already have this key keep accepting it; remove it from their authorized_keys yourself (or use change_instance_ssh_key).",
+				deleteAccessNote,
+			},
+			Data: map[string]any{"ssh_key": key},
+		}, nil
+	}, func(ctx context.Context, c *Call, in deleteSSHKeyInput) (*Result, error) {
+		if err := c.Client.SSHKeys.Delete(ctx, in.SSHKeyID, c.writeOpts()...); err != nil {
+			// A retried delete finds the key gone: that is done.
+			if e, isAPI := pantech.AsError(err); !isAPI || e.Status != http.StatusNotFound {
+				return nil, err
+			}
+		}
+		return ok("Done: SSH key "+in.SSHKeyID+" deleted.", map[string]any{"status": "deleted", "ssh_key_id": in.SSHKeyID})
 	})
 }

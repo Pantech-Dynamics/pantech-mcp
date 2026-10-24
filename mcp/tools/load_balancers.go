@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	pantech "github.com/Pantech-Dynamics/pantech-go"
 )
@@ -88,6 +89,110 @@ func (in createLoadBalancerInput) request() pantech.CreateLoadBalancerRequest {
 	}
 	if len(in.InstanceIDs) > 0 {
 		req.InstanceIDs = &in.InstanceIDs
+	}
+	return req
+}
+
+type loadBalancerInput struct {
+	LoadBalancerID string `json:"load_balancer_id" jsonschema:"The load balancer's id, e.g. lb_…"`
+	Confirmation
+}
+
+type updateLoadBalancerInput struct {
+	LoadBalancerID string    `json:"load_balancer_id" jsonschema:"The load balancer's id."`
+	Name           string    `json:"name,omitempty" jsonschema:"A new name, 1 to 63 characters."`
+	Algorithm      string    `json:"algorithm,omitempty" jsonschema:"roundrobin, leastconn or source."`
+	InstanceIDs    *[]string `json:"instance_ids,omitempty" jsonschema:"The COMPLETE new set of target instances (at most 50): it replaces every current target. Include the ones to keep; [] removes them all. Leave it out to keep the targets."`
+	Confirmation
+}
+
+func init() {
+	addConfirmed(Spec{
+		Name: "update_load_balancer", Title: "Change a load balancer",
+		Description: "Rename a load balancer, change its algorithm, or replace its targets: instance_ids, when given (even empty), is the whole new set. Ports, public IP, subnet and cidr_list cannot change. Get the current targets with list_load_balancers first.",
+		Risk:        Destructive, Destructive: true, Idempotent: true,
+		Routes: []string{"GET /load-balancers/{load_balancer_id}", "PATCH /load-balancers/{load_balancer_id}", "GET /operations/{operation_id}"},
+	}, func(ctx context.Context, c *Call, in updateLoadBalancerInput) (*Preview, error) {
+		if err := checkIDs("load_balancer_id", in.LoadBalancerID); err != nil {
+			return nil, err
+		}
+		if in.Name == "" && in.Algorithm == "" && in.InstanceIDs == nil {
+			return nil, errorf("Nothing to change: give name, algorithm or instance_ids.")
+		}
+		lb, err := c.Client.LoadBalancers.Get(ctx, in.LoadBalancerID)
+		if err != nil {
+			return nil, err
+		}
+		p := &Preview{Data: map[string]any{"load_balancer": lb, "request": in.request()}}
+		var changes []string
+		if in.Name != "" {
+			changes = append(changes, "rename it")
+		}
+		if in.Algorithm != "" {
+			changes = append(changes, fmt.Sprintf("change its algorithm from %s to %s", arg(lb.Algorithm), arg(in.Algorithm)))
+		}
+		if in.InstanceIDs != nil {
+			var current []string
+			for _, m := range lb.Members {
+				if m.DesiredState != "deleted" {
+					current = append(current, m.InstanceID)
+				}
+			}
+			added, removed := diffStrings(current, *in.InstanceIDs)
+			changes = append(changes, fmt.Sprintf("replace its %s with %s (%d added, %d removed)",
+				plural(len(current), "target", "targets"), plural(len(*in.InstanceIDs), "target", "targets"), len(added), len(removed)))
+			p.Data = map[string]any{"load_balancer": lb, "request": in.request(), "added": added, "removed": removed}
+			if len(removed) > 0 {
+				p.Warnings = append(p.Warnings, "Removed targets stop receiving traffic once the change is done.")
+			}
+			if len(*in.InstanceIDs) == 0 {
+				p.Warnings = append(p.Warnings, "No targets: the load balancer will serve nothing until targets are added.")
+			}
+		}
+		p.Action = fmt.Sprintf("Change load balancer %s: %s.", lb.ID, strings.Join(changes, "; "))
+		return p, nil
+	}, func(ctx context.Context, c *Call, in updateLoadBalancerInput) (*Result, error) {
+		acc, err := c.Client.LoadBalancers.Update(ctx, in.LoadBalancerID, in.request(), c.writeOpts()...)
+		if err != nil {
+			return nil, err
+		}
+		return c.finish(ctx, acc, "load balancer "+in.LoadBalancerID+" changed")
+	})
+
+	addConfirmed(Spec{
+		Name: "delete_load_balancer", Title: "Delete a load balancer",
+		Description: "Delete a load balancer. Traffic to its port stops; the instances and the public IP are kept. Needs an AI app connected with Manage and delete access.",
+		Risk:        Destructive, Destructive: true, Idempotent: true,
+		Routes: []string{"GET /load-balancers/{load_balancer_id}", "DELETE /load-balancers/{load_balancer_id}", "GET /operations/{operation_id}"},
+	}, func(ctx context.Context, c *Call, in loadBalancerInput) (*Preview, error) {
+		if err := checkIDs("load_balancer_id", in.LoadBalancerID); err != nil {
+			return nil, err
+		}
+		lb, err := c.Client.LoadBalancers.Get(ctx, in.LoadBalancerID)
+		if err != nil {
+			return nil, err
+		}
+		return &Preview{
+			Action:   fmt.Sprintf("Permanently delete load balancer %s (public port %d, %s). Traffic to that port stops; the instances and the public IP are kept.", lb.ID, lb.PublicPort, plural(len(lb.Members), "target", "targets")),
+			Warnings: []string{deleteAccessNote},
+			Data:     map[string]any{"load_balancer": lb},
+		}, nil
+	}, func(ctx context.Context, c *Call, in loadBalancerInput) (*Result, error) {
+		acc, err := c.Client.LoadBalancers.Delete(ctx, in.LoadBalancerID, c.writeOpts()...)
+		if err != nil {
+			return nil, err
+		}
+		return c.finish(ctx, acc, "load balancer "+in.LoadBalancerID+" deleted")
+	})
+}
+
+func (in updateLoadBalancerInput) request() pantech.UpdateLoadBalancerRequest {
+	req := pantech.UpdateLoadBalancerRequest{InstanceIDs: in.InstanceIDs}
+	if in.Name != "" {
+		req.Name = pantech.Ptr(in.Name)
+	}
+	if in.Algorithm != "" {
+		req.Algorithm = pantech.Ptr(in.Algorithm)
 	}
 	return req
 }

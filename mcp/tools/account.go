@@ -3,6 +3,8 @@ package tools
 import (
 	"context"
 	"fmt"
+	"slices"
+	"strconv"
 	"strings"
 
 	pantech "github.com/Pantech-Dynamics/pantech-go"
@@ -89,7 +91,7 @@ func init() {
 
 	add(Spec{
 		Name: "estimate_price", Title: "Estimate a monthly bill",
-		Description: "Price a whole configuration before building it: machines by plan and running hours, extra storage, VPC networks and snapshot storage. Nothing is created or charged.",
+		Description: "Price a whole configuration before building it: machines by plan and running hours, extra storage, VPC networks and snapshot storage. Nothing is created or charged. The result is an ESTIMATE of a month's bill, not a charge or a quote: say so when reporting it. Its amounts are exact minor-unit values converted to the currency's major unit; report them exactly as given (as an estimate), never rounded or approximated.",
 		Risk:        Read, Idempotent: true,
 		Routes: []string{"GET /billing/credit", "POST /pricing/estimate"},
 	}, func(ctx context.Context, c *Call, in estimateInput) (*Result, error) {
@@ -130,7 +132,7 @@ func init() {
 		if err != nil {
 			return nil, err
 		}
-		text := "Estimated monthly total: " + money(est.PricedSubtotalMinor, est.Currency) + "."
+		text := "Estimated monthly total: " + money(est.PricedSubtotalMinor, est.Currency) + " (an estimate of a month's bill, not a charge; the figure itself is exact, report it as given)."
 		if !est.PricingComplete {
 			text += " Some lines could not be priced; see unpriced_reason in the data."
 		}
@@ -139,7 +141,7 @@ func init() {
 
 	add(Spec{
 		Name: "get_usage", Title: "Get usage",
-		Description: "Measured usage for the whole organization in the current billing period: running hours, storage, memory and network totals, with per-resource entries.",
+		Description: "Measured usage for the whole organization in the current billing period: running hours, storage, memory and network totals, with per-resource entries. These are measured quantities, not money: report them exactly as given, never rounded or approximated. For what each resource cost, use get_usage_by_resource.",
 		Risk:        Read, Idempotent: true,
 		Routes: []string{"GET /usage"},
 	}, func(ctx context.Context, c *Call, _ noInput) (*Result, error) {
@@ -148,8 +150,8 @@ func init() {
 			return nil, err
 		}
 		const maxEntries = 200
-		text := fmt.Sprintf("Usage this period: %.1f running hours, %.1f storage GB-hours, %s of usage entries.",
-			u.Totals.RunningHours, u.Totals.StorageGBHours, plural(len(u.Entries), "entry", "entries"))
+		text := fmt.Sprintf("Measured usage this period (exact): %s running hours, %s storage GB-hours, %s of usage entries.",
+			exactNumber(u.Totals.RunningHours), exactNumber(u.Totals.StorageGBHours), plural(len(u.Entries), "entry", "entries"))
 		if len(u.Entries) > maxEntries {
 			u.Entries = u.Entries[:maxEntries]
 			text += fmt.Sprintf(" Only the first %d entries are shown.", maxEntries)
@@ -159,7 +161,7 @@ func init() {
 
 	add(Spec{
 		Name: "get_credit_balance", Title: "Get credit balance",
-		Description: "The organization's prepaid credit: what is available, pending and prepaid, the estimated next invoice and its date, and the account's standing.",
+		Description: "The organization's prepaid credit: what is available now (exact), pending and prepaid, the next invoice so far and its date (a forecast that grows with usage until the bill date), and the account's standing. " + exactAmounts,
 		Risk:        Read, Idempotent: true,
 		Routes: []string{"GET /billing/credit"},
 	}, func(ctx context.Context, c *Call, _ noInput) (*Result, error) {
@@ -167,9 +169,74 @@ func init() {
 		if err != nil {
 			return nil, err
 		}
-		text := fmt.Sprintf("Available credit %s; estimated next invoice %s on %s; standing: %s.",
+		text := fmt.Sprintf("Available credit: %s (exact, as of now). Next invoice so far: %s on %s — a forecast that grows with usage until the bill date. Standing: %s.",
 			money(cr.AvailableMinor, cr.Currency), money(cr.EstimatedNextInvoiceMinor, cr.Currency),
-			cr.NextInvoiceAt.UTC().Format("2006-01-02"), cr.Standing)
+			cr.NextInvoiceAt.UTC().Format("2006-01-02"), arg(cr.Standing))
+		if cr.PendingMinor != 0 || cr.PrepaidMinor != 0 {
+			text += fmt.Sprintf(" Pending purchases: %s; prepaid instance payments: %s (both exact).", money(cr.PendingMinor, cr.Currency), money(cr.PrepaidMinor, cr.Currency))
+		}
+		text += " Report these amounts exactly as given."
 		return ok(text, cr)
 	})
+
+	add(Spec{
+		Name: "get_usage_by_resource", Title: "Get cost by resource",
+		Description: "What each resource cost over a period: the last 30d (default) or 7d, this month, or last_month, with its rate and days active. " + exactAmounts,
+		Risk:        Read, Idempotent: true,
+		Routes: []string{"GET /usage/by-resource"},
+	}, func(ctx context.Context, c *Call, in usageByResourceInput) (*Result, error) {
+		if in.Period != "" && !slices.Contains([]string{"30d", "7d", "month", "last_month"}, in.Period) {
+			return nil, errorf("period must be 30d, 7d, month or last_month.")
+		}
+		u, err := c.Client.Billing.GetUsageByResource(ctx, &pantech.UsageByResourceParams{Period: in.Period})
+		if err != nil {
+			return nil, err
+		}
+		var total int64
+		for _, r := range u.Data {
+			total += r.CostMinor
+		}
+		return ok(fmt.Sprintf("%s; together %s (exact charges for measured usage in the period). Report these amounts exactly as given.",
+			plural(len(u.Data), "resource", "resources"), money(total, u.Currency)), u)
+	})
+
+	add(Spec{
+		Name: "list_receipts", Title: "List receipts",
+		Description: "Receipts for money that moved on the account (payments, top-ups, invoices paid, credit used for new resources, refunds), newest first. Paginated. " + exactAmounts,
+		Risk:        Read, Idempotent: true,
+		Routes: []string{"GET /billing/receipts"},
+	}, func(ctx context.Context, c *Call, in pageInput) (*Result, error) {
+		page, err := c.Client.Billing.ListReceipts(ctx, in.params())
+		if err != nil {
+			return nil, err
+		}
+		for i := range page.Data {
+			// The code that proves a printed copy genuine stays on the receipt.
+			page.Data[i].Verification = ""
+		}
+		res, err := pageResult(page, "receipt", "receipts")
+		if res != nil {
+			res.Text += " amount_minor is exact, in minor units (kobo or cents); report amounts exactly."
+		}
+		return res, err
+	})
+}
+
+type usageByResourceInput struct {
+	Period string `json:"period,omitempty" jsonschema:"30d (default), 7d, month (this month so far) or last_month."`
+}
+
+// pageInput is a page of a list without a name filter.
+type pageInput struct {
+	Limit  int    `json:"limit,omitempty" jsonschema:"Items per page, 1 to 100 (default 50)."`
+	Cursor string `json:"cursor,omitempty" jsonschema:"The next_cursor of the previous page, to get the next one."`
+}
+
+func (in pageInput) params() *pantech.PageParams {
+	return &pantech.PageParams{Limit: listLimit(in.Limit), Cursor: in.Cursor}
+}
+
+// exactNumber prints a measured quantity without rounding it.
+func exactNumber(f float64) string {
+	return strconv.FormatFloat(f, 'f', -1, 64)
 }

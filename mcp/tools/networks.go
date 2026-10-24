@@ -164,7 +164,7 @@ func init() {
 
 	addConfirmed(Spec{
 		Name: "delete_firewall_rule", Title: "Delete a firewall rule",
-		Description: "Delete one subnet firewall rule. Traffic it allowed is dropped unless another rule allows it. Needs a key with delete access.",
+		Description: "Delete one subnet firewall rule. Traffic it allowed is dropped unless another rule allows it. Needs an AI app connected with Manage and delete access.",
 		Risk:        Destructive, Destructive: true, Idempotent: true,
 		Routes: []string{"GET /subnets/{subnet_id}/firewall-rules/{rule_id}", "DELETE /firewall-rules/{rule_id}", "GET /operations/{operation_id}"},
 	}, func(ctx context.Context, c *Call, in deleteFirewallRuleInput) (*Preview, error) {
@@ -178,7 +178,7 @@ func init() {
 		return &Preview{
 			Action: fmt.Sprintf("Delete firewall rule %s (number %d: %s %s %s %s) from subnet %s.", rule.ID, rule.Number,
 				rule.Action, rule.Direction, describePorts(rule.Protocol, deref(rule.PortStart), deref(rule.PortEnd)), cidrPhrase(rule.Direction, rule.CIDR), in.SubnetID),
-			Warnings: []string{"Traffic this rule allowed is dropped once the change is done, unless another rule allows it."},
+			Warnings: []string{"Traffic this rule allowed is dropped once the change is done, unless another rule allows it.", deleteAccessNote},
 			Data:     map[string]any{"rule": rule},
 		}, nil
 	}, func(ctx context.Context, c *Call, in deleteFirewallRuleInput) (*Result, error) {
@@ -249,4 +249,76 @@ func cidrPhrase(direction, cidr string) string {
 
 func isAnywhere(cidr string) bool {
 	return strings.HasSuffix(strings.TrimSpace(cidr), "/0")
+}
+
+type deleteNetworkInput struct {
+	NetworkID string `json:"network_id" jsonschema:"The VPC's id. It must hold no instances and no public IPs."`
+	Confirmation
+}
+
+type deleteSubnetInput struct {
+	SubnetID string `json:"subnet_id" jsonschema:"The subnet's id. It must hold no instances or databases."`
+	Confirmation
+}
+
+func init() {
+	addConfirmed(Spec{
+		Name: "delete_network", Title: "Delete a VPC network",
+		Description: "Delete a VPC network. It must hold no instances (in any subnet) and no public IPs. Its monthly billing stops. Needs an AI app connected with Manage and delete access.",
+		Risk:        Destructive, Destructive: true, Idempotent: true,
+		Routes: []string{"GET /networks/{network_id}", "DELETE /networks/{network_id}", "GET /operations/{operation_id}"},
+	}, func(ctx context.Context, c *Call, in deleteNetworkInput) (*Preview, error) {
+		if err := checkIDs("network_id", in.NetworkID); err != nil {
+			return nil, err
+		}
+		n, err := c.Client.Networks.Get(ctx, in.NetworkID)
+		if err != nil {
+			return nil, err
+		}
+		p := &Preview{
+			Action:   fmt.Sprintf("Permanently delete VPC network %s (%s). This cannot be undone.", n.ID, arg(n.CIDR)),
+			Warnings: []string{deleteAccessNote},
+			Data:     map[string]any{"network": n},
+		}
+		if n.InstanceCount != nil && *n.InstanceCount > 0 {
+			p.Warnings = append(p.Warnings, fmt.Sprintf("It still holds %s: delete or move them first, or the delete is refused.", plural(*n.InstanceCount, "instance", "instances")))
+		}
+		return p, nil
+	}, func(ctx context.Context, c *Call, in deleteNetworkInput) (*Result, error) {
+		acc, err := c.Client.Networks.Delete(ctx, in.NetworkID, c.writeOpts()...)
+		if err != nil {
+			return nil, err
+		}
+		return c.finish(ctx, acc, "network "+in.NetworkID+" deleted")
+	})
+
+	addConfirmed(Spec{
+		Name: "delete_subnet", Title: "Delete a subnet",
+		Description: "Delete a subnet and its firewall rules. It must hold no instances or databases. Needs an AI app connected with Manage and delete access.",
+		Risk:        Destructive, Destructive: true, Idempotent: true,
+		Routes: []string{"GET /subnets/{subnet_id}", "DELETE /subnets/{subnet_id}", "GET /operations/{operation_id}"},
+	}, func(ctx context.Context, c *Call, in deleteSubnetInput) (*Preview, error) {
+		if err := checkIDs("subnet_id", in.SubnetID); err != nil {
+			return nil, err
+		}
+		sn, err := c.Client.Subnets.Get(ctx, in.SubnetID)
+		if err != nil {
+			return nil, err
+		}
+		p := &Preview{
+			Action:   fmt.Sprintf("Permanently delete subnet %s (%s) of network %s, with its firewall rules. This cannot be undone.", sn.ID, arg(sn.CIDR), arg(sn.NetworkID)),
+			Warnings: []string{deleteAccessNote},
+			Data:     map[string]any{"subnet": sn},
+		}
+		if sn.InstanceCount != nil && *sn.InstanceCount > 0 {
+			p.Warnings = append(p.Warnings, fmt.Sprintf("It still holds %s: delete or move them first, or the delete is refused.", plural(*sn.InstanceCount, "instance", "instances")))
+		}
+		return p, nil
+	}, func(ctx context.Context, c *Call, in deleteSubnetInput) (*Result, error) {
+		acc, err := c.Client.Subnets.Delete(ctx, in.SubnetID, c.writeOpts()...)
+		if err != nil {
+			return nil, err
+		}
+		return c.finish(ctx, acc, "subnet "+in.SubnetID+" deleted")
+	})
 }

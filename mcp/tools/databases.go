@@ -184,3 +184,209 @@ func diffStrings(current, next []string) (added, removed []string) {
 	}
 	return added, removed
 }
+
+type deleteDatabaseInput struct {
+	DatabaseID string `json:"database_id" jsonschema:"The database's id."`
+	Confirmation
+}
+
+type resizeDatabaseStorageInput struct {
+	DatabaseID string `json:"database_id" jsonschema:"The database's id. It must be running."`
+	StorageGB  int    `json:"storage_gb" jsonschema:"The new data disk size in GB: larger than the current one, at most the zone's maximum (2000 today) and a multiple of its step (10 today). Disks only grow."`
+	Confirmation
+}
+
+type databaseListInput struct {
+	DatabaseID string `json:"database_id" jsonschema:"The database's id."`
+	pageInput
+}
+
+type createDatabaseSnapshotInput struct {
+	DatabaseID string `json:"database_id" jsonschema:"The database's id. It must be running or stopped."`
+	Name       string `json:"name" jsonschema:"The snapshot's name, unique among this database's snapshots."`
+	Confirmation
+}
+
+func init() {
+	databaseAction := func(name, title, desc, verb, route string, call func(*pantech.DatabasesService) func(context.Context, string, ...pantech.RequestOption) (*pantech.Accepted, error)) {
+		add(Spec{
+			Name: name, Title: title, Description: desc,
+			Risk: Write, Idempotent: true,
+			Routes: []string{route, "GET /operations/{operation_id}"},
+		}, func(ctx context.Context, c *Call, in databaseInput) (*Result, error) {
+			if err := checkIDs("database_id", in.DatabaseID); err != nil {
+				return nil, err
+			}
+			acc, err := call(c.Client.Databases)(ctx, in.DatabaseID, c.writeOpts()...)
+			if err != nil {
+				return nil, err
+			}
+			return c.finish(ctx, acc, fmt.Sprintf("database %s %s", in.DatabaseID, verb))
+		})
+	}
+	databaseAction("start_database", "Start a database", "Start a stopped database. Its hostname, data and access rules are unchanged; it is billed for its plan again. Waits up to a minute.", "started",
+		"POST /databases/{database_id}/start", func(s *pantech.DatabasesService) func(context.Context, string, ...pantech.RequestOption) (*pantech.Accepted, error) {
+			return s.Start
+		})
+	databaseAction("stop_database", "Stop a database", "Shut a database down cleanly. It keeps its data, hostname and access rules, refuses connections, and is billed for storage only. Waits up to a minute.", "stopped",
+		"POST /databases/{database_id}/stop", func(s *pantech.DatabasesService) func(context.Context, string, ...pantech.RequestOption) (*pantech.Accepted, error) {
+			return s.Stop
+		})
+
+	addConfirmed(Spec{
+		Name: "resize_database_storage", Title: "Grow a database's storage",
+		Description: "Grow a running database's data disk online, without a restart. Disks only grow; the larger size is billed hourly once the resize completes (no upfront charge).",
+		Risk:        Cost, Idempotent: true,
+		Routes: []string{"GET /databases/{database_id}", "GET /database-engines", "POST /databases/{database_id}/resize-storage", "GET /operations/{operation_id}"},
+	}, func(ctx context.Context, c *Call, in resizeDatabaseStorageInput) (*Preview, error) {
+		if err := checkIDs("database_id", in.DatabaseID); err != nil {
+			return nil, err
+		}
+		db, err := c.Client.Databases.Get(ctx, in.DatabaseID)
+		if err != nil {
+			return nil, err
+		}
+		if in.StorageGB <= db.DataVolumeSizeGB {
+			return nil, errorf("storage_gb must be larger than the current %d GB: database disks only grow.", db.DataVolumeSizeGB)
+		}
+		p := &Preview{
+			Action:   fmt.Sprintf("Grow the data disk of database %s from %d GB to %d GB, online.", db.ID, db.DataVolumeSizeGB, in.StorageGB),
+			Price:    "storage is billed hourly at the new size once the resize completes",
+			Warnings: []string{"Disks only grow: this cannot be undone."},
+			Data:     map[string]any{"database": db},
+		}
+		if st := c.databaseStorage(ctx, db.Engine, db.ZoneID); st != nil && st.PricePerGBMonthMinor != nil && st.Currency != nil {
+			per := *st.PricePerGBMonthMinor
+			p.Price = fmt.Sprintf("%s more a month (%d GB more at %s per GB a month; %s a month for the whole %d GB disk), billed hourly once the resize completes, no upfront charge",
+				money(per*int64(in.StorageGB-db.DataVolumeSizeGB), *st.Currency), in.StorageGB-db.DataVolumeSizeGB, money(per, *st.Currency), money(per*int64(in.StorageGB), *st.Currency), in.StorageGB)
+			if st.StepGB > 0 && in.StorageGB%st.StepGB != 0 || st.MaxGB > 0 && in.StorageGB > st.MaxGB {
+				p.Warnings = append(p.Warnings, fmt.Sprintf("In this zone the size must be a multiple of %d GB and at most %d GB, or Pantech refuses.", st.StepGB, st.MaxGB))
+			}
+		}
+		return p, nil
+	}, func(ctx context.Context, c *Call, in resizeDatabaseStorageInput) (*Result, error) {
+		acc, err := c.Client.Databases.ResizeStorage(ctx, in.DatabaseID, pantech.ResizeDatabaseStorageRequest{StorageGB: in.StorageGB}, c.writeOpts()...)
+		if err != nil {
+			return nil, err
+		}
+		return c.finish(ctx, acc, fmt.Sprintf("database %s storage grown to %d GB", in.DatabaseID, in.StorageGB))
+	})
+
+	addConfirmed(Spec{
+		Name: "delete_database", Title: "Delete a database",
+		Description: "Delete a managed database and all its data. Its data disk and a safety snapshot are kept 12 and 24 hours, then destroyed; snapshots you took are kept and stay billed. The unused part of its upfront payment returns to credit. Needs an AI app connected with Manage and delete access.",
+		Risk:        Destructive, Destructive: true, Idempotent: true,
+		Routes: []string{"GET /databases/{database_id}", "DELETE /databases/{database_id}", "GET /operations/{operation_id}"},
+	}, func(ctx context.Context, c *Call, in deleteDatabaseInput) (*Preview, error) {
+		if err := checkIDs("database_id", in.DatabaseID); err != nil {
+			return nil, err
+		}
+		db, err := c.Client.Databases.Get(ctx, in.DatabaseID)
+		if err != nil {
+			return nil, err
+		}
+		return &Preview{
+			Action: fmt.Sprintf("Permanently delete database %s (%s %s, %d GB) and all its data. Its hostname stops working at once; the data disk and a safety snapshot are destroyed 12 and 24 hours later.", db.ID, arg(db.Engine), arg(db.Version), db.DataVolumeSizeGB),
+			Warnings: []string{
+				"Data loss: every table and row is gone once retention ends. Take a snapshot first (create_database_snapshot) if it may be needed.",
+				"Snapshots you took are kept and stay billed until you delete them. The unused part of the upfront payment returns to your credit.",
+				deleteAccessNote,
+			},
+			Data: map[string]any{"database": db},
+		}, nil
+	}, func(ctx context.Context, c *Call, in deleteDatabaseInput) (*Result, error) {
+		acc, err := c.Client.Databases.Delete(ctx, in.DatabaseID, c.writeOpts()...)
+		if err != nil {
+			return nil, err
+		}
+		return c.finish(ctx, acc, "database "+in.DatabaseID+" deleted")
+	})
+
+	add(Spec{
+		Name: "list_database_snapshots", Title: "List a database's snapshots",
+		Description: "List the snapshots of a managed database's data disk.",
+		Risk:        Read, Idempotent: true,
+		Routes: []string{"GET /databases/{database_id}/snapshots"},
+	}, func(ctx context.Context, c *Call, in databaseListInput) (*Result, error) {
+		if err := checkIDs("database_id", in.DatabaseID); err != nil {
+			return nil, err
+		}
+		page, err := c.Client.Databases.ListSnapshots(ctx, in.DatabaseID, &pantech.ListParams{Limit: listLimit(in.Limit), Cursor: in.Cursor})
+		if err != nil {
+			return nil, err
+		}
+		return pageResult(page, "snapshot", "snapshots")
+	})
+
+	addConfirmed(Spec{
+		Name: "create_database_snapshot", Title: "Snapshot a database",
+		Description: "Take a crash-consistent snapshot of a database's data disk (not an engine-level backup; stop the database first for a quiesced copy). Billed hourly on its stored size until deleted, even after the database is gone.",
+		Risk:        Cost,
+		Routes:      []string{"GET /databases/{database_id}", "GET /snapshots/quote", "POST /databases/{database_id}/snapshots", "GET /operations/{operation_id}"},
+	}, func(ctx context.Context, c *Call, in createDatabaseSnapshotInput) (*Preview, error) {
+		if err := checkIDs("database_id", in.DatabaseID); err != nil {
+			return nil, err
+		}
+		db, err := c.Client.Databases.Get(ctx, in.DatabaseID)
+		if err != nil {
+			return nil, err
+		}
+		return &Preview{
+			Action:   fmt.Sprintf("Take a crash-consistent snapshot of the data disk of database %s (%d GB).", db.ID, db.DataVolumeSizeGB),
+			Price:    c.snapshotPrice(ctx, db.DataVolumeSizeGB),
+			Warnings: []string{"Restoring a database from a snapshot is not available yet."},
+			Data:     map[string]any{"database": db, "name": in.Name},
+		}, nil
+	}, func(ctx context.Context, c *Call, in createDatabaseSnapshotInput) (*Result, error) {
+		acc, err := c.Client.Databases.CreateSnapshot(ctx, in.DatabaseID, pantech.CreateSnapshotRequest{Name: in.Name}, c.writeOpts()...)
+		if err != nil {
+			return nil, err
+		}
+		return c.finish(ctx, acc, "snapshot "+acc.ResourceID+" of database "+in.DatabaseID+" taken")
+	})
+
+	add(Spec{
+		Name: "get_database_order", Title: "Get a database order",
+		Description: "Get how a new database is being paid for and provisioned: awaiting_payment, paid, provisioning, provisioned, or payment_failed / failed with a reason. With wait, follows it (and its create operation) for up to a minute. Never returns a password. " + exactAmounts,
+		Risk:        Read, Idempotent: true,
+		Routes: []string{"GET /database-orders/{order_id}", "GET /operations/{operation_id}"},
+	}, func(ctx context.Context, c *Call, in orderInput) (*Result, error) {
+		if err := checkIDs("order_id", in.OrderID); err != nil {
+			return nil, err
+		}
+		o, err := c.Client.Databases.GetOrder(ctx, in.OrderID)
+		if err != nil {
+			return nil, err
+		}
+		if in.Wait && o.Status != pantech.OrderFailed && o.Status != pantech.OrderPaymentFailed {
+			return c.followOrder(ctx, "database", o.ID, o.DatabaseID, func(ctx context.Context) (string, *string, *string, error) {
+				o, err := c.Client.Databases.GetOrder(ctx, in.OrderID)
+				if err != nil {
+					return "", nil, nil, err
+				}
+				return o.Status, o.OperationID, o.FailureCode, nil
+			})
+		}
+		return ok(orderText("database", o.ID, o.DatabaseID, o.Status, o.FailureCode, o.AmountMinor, o.Currency), o)
+	})
+}
+
+// databaseStorage finds an engine's storage limits and price in a zone, best
+// effort.
+func (c *Call) databaseStorage(ctx context.Context, engine, zone string) *pantech.DatabaseEngineStorage {
+	engines, err := c.Client.Catalog.ListDatabaseEngines(ctx)
+	if err != nil {
+		return nil
+	}
+	for _, e := range engines {
+		if e.Engine != engine {
+			continue
+		}
+		for i := range e.Storage {
+			if e.Storage[i].ZoneID == zone {
+				return &e.Storage[i]
+			}
+		}
+	}
+	return nil
+}

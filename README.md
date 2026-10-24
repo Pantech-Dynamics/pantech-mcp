@@ -90,17 +90,30 @@ or credentials file that other users can write, and an API URL that is not https
 
 | Area | Tools (★ = two-step: preview, then confirm) |
 |---|---|
-| Account | `whoami`, `list_regions`, `list_plans`, `list_images`, `estimate_price`, `get_usage`, `get_credit_balance` |
-| Instances | `list_instances`, `get_instance`, `create_instance` ★, `start_instance`, `stop_instance`, `reboot_instance`, `resize_instance` ★, `rename_instance`, `delete_instance` ★ |
-| SSH keys | `list_ssh_keys`, `create_ssh_key` (public keys only), `change_instance_ssh_key` ★ |
-| Networking | `list_networks`, `create_network` ★, `list_subnets`, `create_subnet`, `list_firewall_rules`, `add_firewall_rule` ★, `delete_firewall_rule` ★, `list_public_ips`, `create_public_ip` ★, `attach_public_ip` ★, `detach_public_ip`, `create_port_forwarding_rule` ★, `list_security_groups`, `update_security_group_rules` ★, `list_load_balancers`, `create_load_balancer` ★ |
-| Storage | `list_volumes`, `create_volume` ★, `attach_volume`, `detach_volume`, `resize_volume` ★, `delete_volume` ★, `list_snapshots`, `create_snapshot` ★ |
-| Databases | `list_databases`, `get_database`, `create_database` ★, `update_database_access_rules` ★ |
-| Kubernetes | `list_kubernetes_clusters`, `get_kubernetes_cluster`, `create_kubernetes_cluster` ★, `scale_node_pool` ★ |
-| Other | `list_webhooks`, `get_operation`, `wait_for_operation` |
+| Account | `whoami`, `list_regions`, `list_plans`, `list_images`, `estimate_price`, `get_usage`, `get_usage_by_resource`, `get_credit_balance`, `list_receipts` |
+| Instances | `list_instances`, `get_instance`, `create_instance` ★, `get_instance_order`, `start_instance`, `stop_instance`, `reboot_instance`, `resize_instance` ★, `rename_instance`, `rebuild_instance` ★, `restore_instance_snapshot` ★, `delete_instance` ★, `get_instance_metrics`, `get_instance_usage`, `list_instance_volumes`, `list_instance_snapshots`, `create_instance_snapshot` ★ |
+| SSH | `list_ssh_keys`, `create_ssh_key` (public keys only), `delete_ssh_key` ★, `change_instance_ssh_key` ★, `open_ssh_access` ★, `get_ssh_access`, `revoke_ssh_access` |
+| Networking | `list_networks`, `create_network` ★, `delete_network` ★, `list_subnets`, `create_subnet`, `delete_subnet` ★, `list_firewall_rules`, `add_firewall_rule` ★, `delete_firewall_rule` ★, `list_public_ips`, `create_public_ip` ★, `attach_public_ip` ★, `detach_public_ip`, `delete_public_ip` ★, `list_port_forwarding_rules`, `create_port_forwarding_rule` ★, `delete_port_forwarding_rule` ★, `list_security_groups`, `create_security_group`, `update_security_group_rules` ★, `delete_security_group` ★, `list_load_balancers`, `create_load_balancer` ★, `update_load_balancer` ★, `delete_load_balancer` ★ |
+| Storage | `list_volumes`, `create_volume` ★, `attach_volume`, `detach_volume`, `resize_volume` ★, `delete_volume` ★, `get_volume_usage`, `list_snapshots`, `create_snapshot` ★, `restore_snapshot` ★, `delete_snapshot` ★, `get_snapshot_schedule`, `set_snapshot_schedule` ★ |
+| Databases | `list_databases`, `get_database`, `create_database` ★, `get_database_order`, `start_database`, `stop_database`, `resize_database_storage` ★, `update_database_access_rules` ★, `list_database_snapshots`, `create_database_snapshot` ★, `delete_database` ★ |
+| Kubernetes | `list_kubernetes_clusters`, `get_kubernetes_cluster`, `create_kubernetes_cluster` ★, `start_kubernetes_cluster`, `stop_kubernetes_cluster`, `delete_kubernetes_cluster` ★, `list_node_pools`, `create_node_pool` ★, `scale_node_pool` ★, `delete_node_pool` ★, `list_kubernetes_addons`, `toggle_kubernetes_addon` ★, `list_cluster_nodes`, `list_cluster_workloads` |
+| Other | `list_webhooks`, `list_webhook_deliveries`, `get_operation`, `wait_for_operation` |
 
 Resource: `pantech://docs/agent-brief`. Prompts: `deploy_web_app`, `explain_my_bill`,
 `lock_down_firewall`.
+
+Deleting, rebuilding or restoring something, and lowering a snapshot schedule's retention, needs
+an AI app connected with **Manage and delete** access; the preview says so and says what data is
+lost. Amounts are reported exactly (minor units converted to naira or dollars, never rounded);
+`estimate_price` and the next invoice in `get_credit_balance` are labelled as an estimate and a
+forecast.
+
+`open_ssh_access` opens port 22 for 15 minutes to the address Pantech sees the request come from.
+Through the local server that is your own computer. Through the hosted server it is the address
+your AI app connects from: for a web-based AI app (in a browser) that is the app's server, not
+you, so open SSH from the console or CLI instead. The preview names the address before anything
+is opened, and the result is a ready-to-run `ssh` command that uses your own SSH key (this server
+never sees it).
 
 Changes run in the background: tools wait up to a minute (sending progress notifications when the
 app asks for them), then return an operation id for `wait_for_operation`.
@@ -129,11 +142,12 @@ is wrong or is being manipulated:
   another key, and the server never confirms on its own.
 - **No double changes.** A confirmed call sends an `Idempotency-Key` derived from its token, so a
   retried confirmation returns the original result instead of creating a second server.
-- **No secrets in the conversation.** Kubeconfigs, volume key credentials, instance consoles, SSH
-  access grants, database passwords and webhook secrets are never exposed as tools (a test fails
-  if any tool calls those routes). `create_ssh_key` only imports public keys; `create_database`
-  drops the generated password (set your own in the console); webhook URLs are shown without query
-  strings.
+- **No secrets in the conversation.** Kubeconfigs, volume key credentials, instance consoles,
+  Kubernetes manifests, database passwords and webhook secrets are never exposed as tools (a test
+  fails if any tool calls those routes). Temporary SSH access returns only a host, a port and an
+  expiry; webhook deliveries are listed without the endpoint's responses. `create_ssh_key` only
+  imports public keys; `create_database` drops the generated password (set your own in the
+  console); webhook URLs are shown without query strings.
 - **Account data is fenced.** Names, tags, descriptions and rules come back clearly labelled as
   data from the account, not instructions, so text planted in a resource name cannot pose as
   instructions.

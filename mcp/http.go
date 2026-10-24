@@ -64,6 +64,9 @@ type HTTPConfig struct {
 	APIHTTPClient *http.Client
 	// DocsURL overrides the agent brief's URL (tests).
 	DocsURL string
+	// WaitBudget and PollInterval shorten waits (tests).
+	WaitBudget   time.Duration
+	PollInterval time.Duration
 }
 
 // Validate checks the configuration http mode refuses to start without.
@@ -137,6 +140,9 @@ func NewHTTPHandler(cfg HTTPConfig) (http.Handler, error) {
 		IconURL:    publicURL + "/icon.svg",
 		DocsURL:    cfg.DocsURL,
 		Logger:     log,
+
+		WaitBudget:   cfg.WaitBudget,
+		PollInterval: cfg.PollInterval,
 	})
 	streamable := sdk.NewStreamableHTTPHandler(func(*http.Request) *sdk.Server { return server }, &sdk.StreamableHTTPOptions{
 		Stateless:           true,

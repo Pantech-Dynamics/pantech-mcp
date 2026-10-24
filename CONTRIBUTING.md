@@ -107,7 +107,7 @@ keep these rules; reviews check them first.
 - **One write per confirmed execution**, sent with `c.writeOpts()` so it carries the
   Idempotency-Key derived from the token.
 - **Never return or accept secrets.** No tool may expose kubeconfigs, volume key credentials,
-  instance consoles, SSH access grants, database passwords, webhook creation or secret rotation,
+  instance consoles, Kubernetes manifests, database passwords, webhook creation or secret rotation,
   credit purchases or account deletion. `excluded.go` and `TestNoExcludedCalls` enforce this.
   Decode responses that may carry a secret into a struct without that field (see
   `create_ssh_key`, `create_database`).

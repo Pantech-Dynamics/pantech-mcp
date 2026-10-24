@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
 
 	pantech "github.com/Pantech-Dynamics/pantech-go"
@@ -141,14 +142,38 @@ func toolError(ctx context.Context, err error) *Result {
 	return &Result{IsError: true, Text: "Could not reach the Pantech API. Try again in a moment."}
 }
 
-// money formats an amount in minor units: 1250000 NGN → "NGN 12,500.00".
+// exactAmounts is the guidance every tool that reports money gives the model.
+const exactAmounts = "All amounts are exact minor-unit values converted to the currency's major unit; report them exactly as given, never rounded or approximated."
+
+// currencyDigits is how many minor-unit digits each billing currency has:
+// kobo for NGN, cents for USD.
+var currencyDigits = map[string]int{"NGN": 2, "USD": 2}
+
+// minorDigits is how many minor-unit digits a currency has (two for a code
+// Pantech does not bill in).
+func minorDigits(currency string) int {
+	if d, ok := currencyDigits[currency]; ok {
+		return d
+	}
+	return 2
+}
+
+// money formats an exact amount in minor units: 1250000 NGN → "NGN 12,500.00".
+// It uses integer arithmetic only, so nothing is rounded.
 func money(minor int64, currency string) string {
 	neg := minor < 0
+	// Work in uint64 so the smallest int64 still negates exactly.
+	u := uint64(minor)
 	if neg {
-		minor = -minor
+		u = uint64(-(minor + 1)) + 1
 	}
-	whole, frac := minor/100, minor%100
-	s := fmt.Sprintf("%d", whole)
+	digits := minorDigits(currency)
+	scale := uint64(1)
+	for range digits {
+		scale *= 10
+	}
+	whole, frac := u/scale, u%scale
+	s := strconv.FormatUint(whole, 10)
 	var b strings.Builder
 	for i, ch := range s {
 		if i > 0 && (len(s)-i)%3 == 0 {
@@ -160,7 +185,11 @@ func money(minor int64, currency string) string {
 	if neg {
 		sign = "-"
 	}
-	return fmt.Sprintf("%s%s %s.%02d", sign, currency, b.String(), frac)
+	out := fmt.Sprintf("%s%s %s", sign, currency, b.String())
+	if digits > 0 {
+		out += fmt.Sprintf(".%0*d", digits, frac)
+	}
+	return out
 }
 
 // redactURL keeps a webhook URL's scheme, host and path and drops anything

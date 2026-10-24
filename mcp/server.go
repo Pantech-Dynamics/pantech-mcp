@@ -22,7 +22,7 @@ import (
 
 // Version is the server's version, set at build time with
 // -ldflags "-X github.com/Pantech-Dynamics/pantech-mcp/mcp.Version=…".
-var Version = "0.1.0"
+var Version = "0.2.0"
 
 // DefaultAPIURL is the production public API.
 const DefaultAPIURL = "https://api.pantechdynamics.com/public/v1"
@@ -92,11 +92,12 @@ func New(opts Options) *sdk.Server {
 	s := sdk.NewServer(impl, &sdk.ServerOptions{Instructions: instructions, Logger: opts.Logger})
 
 	env := &tools.Env{
-		Client:       clientFactory(opts),
-		Confirm:      opts.Confirm,
-		WaitBudget:   opts.WaitBudget,
-		PollInterval: opts.PollInterval,
-		Logger:       opts.Logger,
+		Client:        clientFactory(opts),
+		Confirm:       opts.Confirm,
+		WaitBudget:    opts.WaitBudget,
+		PollInterval:  opts.PollInterval,
+		CallerAddress: callerAddress(opts),
+		Logger:        opts.Logger,
 	}
 	tools.Register(s, env)
 	addResources(s, opts)
@@ -160,6 +161,23 @@ func clientFactory(opts Options) func(context.Context, *sdk.CallToolRequest) (*p
 			return nil, "", err
 		}
 		return c, Subject(key), nil
+	}
+}
+
+// callerAddress says which address the API sees a call's requests come from,
+// which is where open_ssh_access opens port 22 to. In stdio mode the server
+// runs on the user's own computer. In http mode it is the caller's address
+// as this server computes it (behind a trusted proxy, which passes it on to
+// the API); otherwise the API sees this server's own address.
+func callerAddress(opts Options) func(*sdk.CallToolRequest) tools.CallerAddress {
+	return func(req *sdk.CallToolRequest) tools.CallerAddress {
+		if opts.APIKey != "" {
+			return tools.CallerAddress{Description: "this computer's public address (the address this machine reaches the internet from)"}
+		}
+		if ip := clientIPFrom(req); ip != "" {
+			return tools.CallerAddress{IP: ip, Description: ip + ", the address this request reached this server from"}
+		}
+		return tools.CallerAddress{Description: "this server's own public address (it is not set up to pass on yours)"}
 	}
 }
 

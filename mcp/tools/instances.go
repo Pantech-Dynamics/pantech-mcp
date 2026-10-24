@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	pantech "github.com/Pantech-Dynamics/pantech-go"
@@ -210,7 +211,7 @@ func init() {
 
 	addConfirmed(Spec{
 		Name: "delete_instance", Title: "Delete an instance",
-		Description: "Delete an instance. It is stopped, a safety snapshot of its root disk is kept for 24 hours, then it is removed. Attached volumes are detached, not deleted. Needs a key with delete access.",
+		Description: "Delete an instance. It is stopped, a safety snapshot of its root disk is kept for 24 hours, then it is removed. Attached volumes are detached, not deleted. Needs an AI app connected with Manage and delete access.",
 		Risk:        Destructive, Destructive: true, Idempotent: true,
 		Routes: []string{"GET /instances/{instance_id}", "GET /instances/{instance_id}/volumes", "DELETE /instances/{instance_id}", "GET /operations/{operation_id}"},
 	}, func(ctx context.Context, c *Call, in deleteInstanceInput) (*Preview, error) {
@@ -222,8 +223,9 @@ func init() {
 			return nil, err
 		}
 		p := &Preview{
-			Action: fmt.Sprintf("Permanently delete instance %s. Everything on its root disk is lost after the 24-hour safety snapshot expires.", vm.ID),
-			Data:   map[string]any{"instance": vm},
+			Action:   fmt.Sprintf("Permanently delete instance %s. Everything on its root disk is lost after the 24-hour safety snapshot expires.", vm.ID),
+			Warnings: []string{deleteAccessNote},
+			Data:     map[string]any{"instance": vm},
 		}
 		if vols, err := c.Client.Instances.ListVolumes(ctx, vm.ID, &pantech.ListParams{Limit: 100}); err == nil && len(vols.Data) > 0 {
 			p.Warnings = append(p.Warnings, fmt.Sprintf("%s attached: detached and kept, still billed.", plural(len(vols.Data), "volume is", "volumes are")))
@@ -357,4 +359,278 @@ func pageResult[T any](page *pantech.Page[T], one, many string) (*Result, error)
 		text += " There are more: call again with cursor set to next_cursor."
 	}
 	return ok(text, page)
+}
+
+// deleteAccessNote goes on the preview of every change the API treats as
+// destructive: an AI app connected without delete access is refused.
+const deleteAccessNote = `This AI app needs "Manage and delete" access for this: with Read only or Manage, Pantech refuses it. Reconnect the app with Manage and delete, or do it in the console.`
+
+type rebuildInstanceInput struct {
+	InstanceID string `json:"instance_id" jsonschema:"The instance's id."`
+	ImageSlug  string `json:"image_slug,omitempty" jsonschema:"The operating system to install, from list_images. Default: the instance's current image."`
+	Confirmation
+}
+
+type restoreInstanceInput struct {
+	InstanceID  string `json:"instance_id" jsonschema:"The instance's id."`
+	SnapshotID  string `json:"snapshot_id" jsonschema:"A snapshot of this instance's root disk, from list_instance_snapshots."`
+	ConfirmName string `json:"confirm_name" jsonschema:"The instance's current name, exactly as the user types it, to confirm that everything written since the snapshot is lost."`
+	Confirmation
+}
+
+type instanceMetricsInput struct {
+	InstanceID string `json:"instance_id" jsonschema:"The instance's id."`
+	Interval   string `json:"interval,omitempty" jsonschema:"The window: 1h, 24h (default), 7d or 30d."`
+}
+
+type instanceListInput struct {
+	InstanceID string `json:"instance_id" jsonschema:"The instance's id."`
+	pageInput
+}
+
+type createInstanceSnapshotInput struct {
+	InstanceID string `json:"instance_id" jsonschema:"The instance's id."`
+	Name       string `json:"name" jsonschema:"The snapshot's name, unique among this instance's snapshots."`
+	Confirmation
+}
+
+type orderInput struct {
+	OrderID string `json:"order_id" jsonschema:"The order's id, e.g. ord_…"`
+	Wait    bool   `json:"wait,omitempty" jsonschema:"Wait up to about a minute for the order to be provisioned and its create operation to finish."`
+}
+
+func init() {
+	addConfirmed(Spec{
+		Name: "rebuild_instance", Title: "Rebuild an instance",
+		Description: "Reinstall an instance's operating system, from image_slug or its current image. EVERYTHING on the root disk is erased; attached volumes, addresses and the plan are kept. Suggest create_instance_snapshot first. Needs an AI app connected with Manage and delete access.",
+		Risk:        Destructive, Destructive: true,
+		Routes: []string{"GET /instances/{instance_id}", "POST /instances/{instance_id}/rebuild", "GET /operations/{operation_id}"},
+	}, func(ctx context.Context, c *Call, in rebuildInstanceInput) (*Preview, error) {
+		if err := checkIDs("instance_id", in.InstanceID); err != nil {
+			return nil, err
+		}
+		vm, err := c.Client.Instances.Get(ctx, in.InstanceID)
+		if err != nil {
+			return nil, err
+		}
+		image := in.ImageSlug
+		if image == "" {
+			image = str(vm.ImageSlug)
+		}
+		return &Preview{
+			Action: fmt.Sprintf("Erase the root disk of instance %s and reinstall it with image %s. All data on the root disk is permanently lost; attached volumes, addresses and the plan are kept.", vm.ID, arg(valueOr(image, "(its current image)"))),
+			Warnings: []string{
+				"Data loss: files, databases and settings on the root disk cannot be recovered afterwards. Take a snapshot first (create_instance_snapshot) if anything may be needed.",
+				deleteAccessNote,
+			},
+			Data: map[string]any{"instance": vm, "image_slug": image},
+		}, nil
+	}, func(ctx context.Context, c *Call, in rebuildInstanceInput) (*Result, error) {
+		req := pantech.RebuildRequest{}
+		if in.ImageSlug != "" {
+			req.ImageSlug = pantech.Ptr(in.ImageSlug)
+		}
+		acc, err := c.Client.Instances.Rebuild(ctx, in.InstanceID, req, c.writeOpts()...)
+		if err != nil {
+			return nil, err
+		}
+		return c.finish(ctx, acc, fmt.Sprintf("instance %s rebuilt", in.InstanceID))
+	})
+
+	addConfirmed(Spec{
+		Name: "restore_instance_snapshot", Title: "Restore an instance from a snapshot",
+		Description: "Roll an instance's root disk back to one of its own snapshots, then reboot it. Everything written to the root disk since the snapshot is lost; attached volumes are not changed. confirm_name must be the instance's current name, typed by the user. Needs an AI app connected with Manage and delete access.",
+		Risk:        Destructive, Destructive: true,
+		Routes: []string{"GET /instances/{instance_id}", "GET /snapshots/{snapshot_id}", "POST /instances/{instance_id}/restore", "GET /operations/{operation_id}"},
+	}, func(ctx context.Context, c *Call, in restoreInstanceInput) (*Preview, error) {
+		if err := checkIDs("instance_id", in.InstanceID, "snapshot_id", in.SnapshotID); err != nil {
+			return nil, err
+		}
+		vm, err := c.Client.Instances.Get(ctx, in.InstanceID)
+		if err != nil {
+			return nil, err
+		}
+		if in.ConfirmName != vm.Name {
+			return nil, errorf("confirm_name does not match instance %s's current name. Ask the user to type the instance's name exactly (see get_instance), then call again.", vm.ID)
+		}
+		snap, err := c.Client.Snapshots.Get(ctx, in.SnapshotID)
+		if err != nil {
+			return nil, err
+		}
+		if snap.InstanceID == nil || *snap.InstanceID != vm.ID {
+			return nil, errorf("Snapshot %s is not a snapshot of instance %s's root disk. Call list_instance_snapshots for its snapshots.", snap.ID, vm.ID)
+		}
+		taken := "an unknown time"
+		if snap.CompletedAt != nil {
+			taken = snap.CompletedAt.UTC().Format(time.RFC3339)
+		} else if snap.CreatedAt != nil {
+			taken = snap.CreatedAt.UTC().Format(time.RFC3339)
+		}
+		return &Preview{
+			Action: fmt.Sprintf("Roll the root disk of instance %s back to snapshot %s (taken %s), then reboot it. Everything written to the root disk since then is permanently lost.", vm.ID, snap.ID, taken),
+			Warnings: []string{
+				"Data loss: changes on the root disk since the snapshot cannot be recovered. Take a new snapshot first if they may be needed. Attached volumes are not changed.",
+				deleteAccessNote,
+			},
+			Data: map[string]any{"instance": vm, "snapshot": snap},
+		}, nil
+	}, func(ctx context.Context, c *Call, in restoreInstanceInput) (*Result, error) {
+		acc, err := c.Client.Instances.Restore(ctx, in.InstanceID, pantech.RestoreRequest{SnapshotID: in.SnapshotID, ConfirmName: in.ConfirmName}, c.writeOpts()...)
+		if err != nil {
+			return nil, err
+		}
+		return c.finish(ctx, acc, fmt.Sprintf("instance %s restored from snapshot %s", in.InstanceID, in.SnapshotID))
+	})
+
+	add(Spec{
+		Name: "get_instance_metrics", Title: "Get instance metrics",
+		Description: "CPU, memory, network and disk activity of an instance over 1h, 24h (default), 7d or 30d, one point per bucket. available is false when no samples exist yet.",
+		Risk:        Read, Idempotent: true,
+		Routes: []string{"GET /instances/{instance_id}/metrics"},
+	}, func(ctx context.Context, c *Call, in instanceMetricsInput) (*Result, error) {
+		if err := checkIDs("instance_id", in.InstanceID); err != nil {
+			return nil, err
+		}
+		interval := valueOr(in.Interval, "24h")
+		if !slices.Contains([]string{"1h", "24h", "7d", "30d"}, interval) {
+			return nil, errorf("interval must be 1h, 24h, 7d or 30d.")
+		}
+		m, err := c.Client.Instances.GetMetrics(ctx, in.InstanceID, &pantech.InstanceMetricsParams{Interval: interval})
+		if err != nil {
+			return nil, err
+		}
+		if !m.Available {
+			return ok(fmt.Sprintf("No metrics for instance %s yet (no samples over %s).", in.InstanceID, interval), m)
+		}
+		return ok(fmt.Sprintf("Metrics of instance %s over %s: %s.", in.InstanceID, interval, plural(len(m.Points), "point", "points")), m)
+	})
+
+	add(Spec{
+		Name: "get_instance_usage", Title: "Get instance usage",
+		Description: "Measured usage of one instance in the current billing period: running hours, storage, memory and network. These are measured quantities: report them exactly as given.",
+		Risk:        Read, Idempotent: true,
+		Routes: []string{"GET /instances/{instance_id}/usage"},
+	}, func(ctx context.Context, c *Call, in instanceInput) (*Result, error) {
+		if err := checkIDs("instance_id", in.InstanceID); err != nil {
+			return nil, err
+		}
+		u, err := c.Client.Instances.GetUsage(ctx, in.InstanceID)
+		if err != nil {
+			return nil, err
+		}
+		return usageResult("instance "+in.InstanceID, u)
+	})
+
+	add(Spec{
+		Name: "list_instance_volumes", Title: "List an instance's volumes",
+		Description: "List the volumes attached to an instance.",
+		Risk:        Read, Idempotent: true,
+		Routes: []string{"GET /instances/{instance_id}/volumes"},
+	}, func(ctx context.Context, c *Call, in instanceListInput) (*Result, error) {
+		if err := checkIDs("instance_id", in.InstanceID); err != nil {
+			return nil, err
+		}
+		page, err := c.Client.Instances.ListVolumes(ctx, in.InstanceID, &pantech.ListParams{Limit: listLimit(in.Limit), Cursor: in.Cursor})
+		if err != nil {
+			return nil, err
+		}
+		return pageResult(page, "volume", "volumes")
+	})
+
+	add(Spec{
+		Name: "list_instance_snapshots", Title: "List an instance's snapshots",
+		Description: "List the snapshots of an instance's root disk (manual and automatic). A snapshot id is what restore_instance_snapshot takes.",
+		Risk:        Read, Idempotent: true,
+		Routes: []string{"GET /instances/{instance_id}/snapshots"},
+	}, func(ctx context.Context, c *Call, in instanceListInput) (*Result, error) {
+		if err := checkIDs("instance_id", in.InstanceID); err != nil {
+			return nil, err
+		}
+		page, err := c.Client.Instances.ListSnapshots(ctx, in.InstanceID, &pantech.ListParams{Limit: listLimit(in.Limit), Cursor: in.Cursor})
+		if err != nil {
+			return nil, err
+		}
+		return pageResult(page, "snapshot", "snapshots")
+	})
+
+	addConfirmed(Spec{
+		Name: "create_instance_snapshot", Title: "Snapshot an instance",
+		Description: "Take a crash-consistent snapshot of an instance's root disk. Billed hourly on its stored size until deleted.",
+		Risk:        Cost,
+		Routes:      []string{"GET /instances/{instance_id}", "GET /snapshots/quote", "POST /instances/{instance_id}/snapshots", "GET /operations/{operation_id}"},
+	}, func(ctx context.Context, c *Call, in createInstanceSnapshotInput) (*Preview, error) {
+		if err := checkIDs("instance_id", in.InstanceID); err != nil {
+			return nil, err
+		}
+		vm, err := c.Client.Instances.Get(ctx, in.InstanceID)
+		if err != nil {
+			return nil, err
+		}
+		sizeGB := 0
+		if vm.Spec != nil {
+			sizeGB = vm.Spec.DiskGB
+		}
+		return &Preview{
+			Action: fmt.Sprintf("Take a snapshot of the root disk of instance %s.", vm.ID),
+			Price:  c.snapshotPrice(ctx, sizeGB),
+			Data:   map[string]any{"instance": vm, "name": in.Name},
+		}, nil
+	}, func(ctx context.Context, c *Call, in createInstanceSnapshotInput) (*Result, error) {
+		acc, err := c.Client.Instances.CreateSnapshot(ctx, in.InstanceID, pantech.CreateSnapshotRequest{Name: in.Name}, c.writeOpts()...)
+		if err != nil {
+			return nil, err
+		}
+		return c.finish(ctx, acc, "snapshot "+acc.ResourceID+" of instance "+in.InstanceID+" taken")
+	})
+
+	add(Spec{
+		Name: "get_instance_order", Title: "Get an instance order",
+		Description: "Get how a new instance is being paid for and provisioned: awaiting_payment, paid, provisioning, provisioned, or payment_failed / failed with a reason. With wait, follows it (and its create operation) for up to a minute. " + exactAmounts,
+		Risk:        Read, Idempotent: true,
+		Routes: []string{"GET /instance-orders/{order_id}", "GET /operations/{operation_id}"},
+	}, func(ctx context.Context, c *Call, in orderInput) (*Result, error) {
+		if err := checkIDs("order_id", in.OrderID); err != nil {
+			return nil, err
+		}
+		o, err := c.Client.Instances.GetOrder(ctx, in.OrderID)
+		if err != nil {
+			return nil, err
+		}
+		if in.Wait && o.Status != pantech.OrderFailed && o.Status != pantech.OrderPaymentFailed {
+			return c.followOrder(ctx, "instance", o.ID, o.InstanceID, func(ctx context.Context) (string, *string, *string, error) {
+				o, err := c.Client.Instances.GetOrder(ctx, in.OrderID)
+				if err != nil {
+					return "", nil, nil, err
+				}
+				return o.Status, o.OperationID, o.FailureCode, nil
+			})
+		}
+		return ok(orderText("instance", o.ID, o.InstanceID, o.Status, o.FailureCode, o.AmountMinor, o.Currency), o)
+	})
+}
+
+// orderText summarises an order in our own words.
+func orderText(kind, orderID, resourceID, status string, failure *string, amountMinor int64, currency string) string {
+	text := fmt.Sprintf("The %s order %s for %s is %s; its initial payment is %s (exact).", kind, orderID, resourceID, arg(status), money(amountMinor, currency))
+	if failure != nil && *failure != "" {
+		text += " Failure: " + arg(*failure) + "; nothing was provisioned, and any payment taken is returned to your credit."
+	}
+	return text
+}
+
+// usageResult summarises a resource's measured usage.
+func usageResult(what string, u *pantech.UsageSummary) (*Result, error) {
+	return ok(fmt.Sprintf("Measured usage of %s this period (exact): %s running hours, %s storage GB-hours, %s memory MB-hours.",
+		what, exactNumber(u.Totals.RunningHours), exactNumber(u.Totals.StorageGBHours), exactNumber(u.Totals.AllocatedMemoryMBHours)), u)
+}
+
+// snapshotPrice prices a snapshot of up to sizeGB, or says how it is billed.
+func (c *Call) snapshotPrice(ctx context.Context, sizeGB int) string {
+	price := "billed hourly on the snapshot's stored size"
+	if sizeGB > 0 {
+		if q, err := c.Client.Snapshots.Quote(ctx, sizeGB); err == nil && q.Priced && q.MonthlyMinor != nil && q.Currency != nil {
+			price = fmt.Sprintf("at most about %s a month if it stores the full %d GB (billed on stored size)", money(*q.MonthlyMinor, *q.Currency), sizeGB)
+		}
+	}
+	return price
 }

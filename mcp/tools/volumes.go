@@ -151,7 +151,7 @@ func init() {
 
 	addConfirmed(Spec{
 		Name: "delete_volume", Title: "Delete a volume",
-		Description: "Delete a volume and all its data. Detach it first. Its snapshots are kept (and stay billed). Needs a key with delete access.",
+		Description: "Delete a volume and all its data. Detach it first. Its snapshots are kept (and stay billed). Needs an AI app connected with Manage and delete access.",
 		Risk:        Destructive, Destructive: true, Idempotent: true,
 		Routes: []string{"GET /volumes/{volume_id}", "DELETE /volumes/{volume_id}", "GET /operations/{operation_id}"},
 	}, func(ctx context.Context, c *Call, in deleteVolumeInput) (*Preview, error) {
@@ -164,7 +164,7 @@ func init() {
 		}
 		p := &Preview{
 			Action:   fmt.Sprintf("Permanently delete volume %s (%d GB) and every file on it. This cannot be undone.", vol.ID, vol.SizeGB),
-			Warnings: []string{"Its snapshots are kept and stay billed until deleted."},
+			Warnings: []string{"Its snapshots are kept and stay billed until deleted.", deleteAccessNote},
 			Data:     map[string]any{"volume": vol},
 		}
 		if vol.AttachedInstanceID != nil {

@@ -1,0 +1,22 @@
+# Routes the public API marks x-destructive (an AI app key needs the delete
+# scope for them), from the OpenAPI document at
+# https://docs.pantechdynamics.com/openapi/public-api.yaml. Keep in sync with it.
+DELETE /databases/{database_id}
+DELETE /databases/{database_id}/snapshots/{snapshot_id}
+DELETE /firewall-rules/{rule_id}
+DELETE /instances/{instance_id}
+DELETE /instances/{instance_id}/private-network
+DELETE /kubernetes-clusters/{cluster_id}
+DELETE /kubernetes-clusters/{cluster_id}/node-pools/{pool_id}
+DELETE /load-balancers/{load_balancer_id}
+DELETE /networks/{network_id}
+DELETE /port-forwarding-rules/{rule_id}
+DELETE /public-ips/{public_ip_id}
+DELETE /security-groups/{security_group_id}
+DELETE /snapshots/{snapshot_id}
+DELETE /ssh-keys/{ssh_key_id}
+DELETE /subnets/{subnet_id}
+DELETE /volumes/{volume_id}
+DELETE /webhooks/{webhook_id}
+POST /instances/{instance_id}/rebuild
+POST /instances/{instance_id}/restore

@@ -7,6 +7,11 @@ import (
 	"time"
 )
 
+type webhookDeliveriesInput struct {
+	WebhookID string `json:"webhook_id" jsonschema:"The webhook's id, from list_webhooks."`
+	pageInput
+}
+
 type operationInput struct {
 	OperationID string `json:"operation_id" jsonschema:"The operation's id, e.g. op_…"`
 }
@@ -28,6 +33,34 @@ func init() {
 			hooks[i].URL = redactURL(hooks[i].URL)
 		}
 		return ok(plural(len(hooks), "webhook", "webhooks")+".", hooks)
+	})
+
+	add(Spec{
+		Name: "list_webhook_deliveries", Title: "List webhook deliveries",
+		Description: "List the events sent, or waiting to be sent, to one webhook over the last 30 days, newest first: status, attempts and how the last attempt went. Read only; endpoint responses and secrets are not returned. Paginated.",
+		Risk:        Read, Idempotent: true,
+		Routes: []string{"GET /webhooks/{webhook_id}/deliveries"},
+	}, func(ctx context.Context, c *Call, in webhookDeliveriesInput) (*Result, error) {
+		if err := checkIDs("webhook_id", in.WebhookID); err != nil {
+			return nil, err
+		}
+		page, err := c.Client.Webhooks.ListDeliveries(ctx, in.WebhookID, in.params())
+		if err != nil {
+			return nil, err
+		}
+		failed := 0
+		for i := range page.Data {
+			// The endpoint's response body may echo anything, tokens included.
+			page.Data[i].LastResponse = nil
+			if page.Data[i].Status == "failed" {
+				failed++
+			}
+		}
+		res, err := pageResult(page, "delivery", "deliveries")
+		if res != nil {
+			res.Text += fmt.Sprintf(" %d failed.", failed)
+		}
+		return res, err
 	})
 
 	add(Spec{
