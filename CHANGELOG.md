@@ -15,6 +15,8 @@ tagged and released (binaries on GitHub, the image on ghcr.io).
   to approve it: an AI app cannot approve its own steps. What the instance reports is returned as
   untrusted data only. Also `list_agent_sessions`, `get_agent_session`,
   `list_agent_session_events`, `end_agent_session` and `get_agent_session_report`.
+- `create_instance` takes `agent: true` to install the Pantech agent at first boot, so an AI app
+  can create an instance and then work in it with no login to it.
 
 ## v0.2.0 — 2026-10-24
 
