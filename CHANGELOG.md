@@ -3,6 +3,19 @@
 Releases are cut from this file: a new `## vX.Y.Z — YYYY-MM-DD` heading pushed to main is
 tagged and released (binaries on GitHub, the image on ghcr.io).
 
+## Unreleased
+
+### Added
+
+- Inside an instance: `start_tools_session` opens a session on an instance whose Pantech agent is
+  enabled (`get_instance_agent`), in `plan` (reads only) or `ask` mode, and `run_in_instance`,
+  `read_instance_file`, `write_instance_file` and `list_instance_dir` carry out one step each, as
+  the session's unprivileged user, waiting up to a minute for the result (`get_agent_tool_call`
+  follows a longer one). A step waiting for the user's approval is handed back at once with where
+  to approve it: an AI app cannot approve its own steps. What the instance reports is returned as
+  untrusted data only. Also `list_agent_sessions`, `get_agent_session`,
+  `list_agent_session_events`, `end_agent_session` and `get_agent_session_report`.
+
 ## v0.2.0 — 2026-10-24
 
 ### Added
