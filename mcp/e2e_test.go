@@ -850,3 +850,24 @@ func TestInstanceStepsFenceWhatTheInstanceReported(t *testing.T) {
 		t.Error("mode auto was accepted")
 	}
 }
+
+// TestCreateInstanceWithTheAgent checks that agent: true reaches the API as
+// agent_enabled, and that leaving it out sends nothing extra.
+func TestCreateInstanceWithTheAgent(t *testing.T) {
+	api, srv := newFakeAPI(t)
+	cs := connect(t, srv.URL+apiPrefix, testKey, nil)
+	for _, agent := range []bool{true, false} {
+		args := map[string]any{"name": "lab", "plan_slug": "s-1", "image_slug": "ubuntu-24-04", "ssh_key_id": "sshk_1", "agent": agent}
+		res, text := call(t, cs, "create_instance", args)
+		if agent != strings.Contains(text, "Pantech agent is installed") {
+			t.Errorf("agent=%v preview: %s", agent, text)
+		}
+		args["confirmation_token"] = structured(t, res)["data"].(map[string]any)["confirmation_token"]
+		api.reset()
+		call(t, cs, "create_instance", args)
+		posts := api.calls("POST", "/instances")
+		if len(posts) != 1 || strings.Contains(posts[0].Body, `"agent_enabled":true`) != agent || !strings.Contains(posts[0].Body, `"name":"lab"`) {
+			t.Errorf("agent=%v sent %+v", agent, posts)
+		}
+	}
+}
