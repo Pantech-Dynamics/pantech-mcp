@@ -102,6 +102,9 @@ type agentEventsInput struct {
 const toolCallRoutes = "POST /agent-sessions/{session_id}/tool-calls"
 const toolCallGetRoute = "GET /agent-sessions/{session_id}/tool-calls/{call_id}"
 
+// sessionGetRoute is also read by the step tools, to say when a queued step's agent is offline.
+const sessionGetRoute = "GET /agent-sessions/{session_id}"
+
 func init() {
 	add(Spec{
 		Name: "get_instance_agent", Title: "Check an instance's Pantech agent",
@@ -142,8 +145,12 @@ func init() {
 		if err := c.Client.Do(ctx, "POST", "/instances/"+in.InstanceID+"/agent-sessions", nil, body, &s, c.writeOpts()...); err != nil {
 			return nil, err
 		}
-		return ok(fmt.Sprintf("Started tools session %s on instance %s in %s mode. Its agent picks it up within seconds; use run_in_instance and the other instance tools with session_id %s. The session ends after a while with no calls, or with end_agent_session.",
-			arg(s.ID), in.InstanceID, in.Mode, arg(s.ID)), s)
+		pickup := "Its agent picks it up within seconds"
+		if !s.Connected {
+			pickup = "Its agent is not connected right now, so the session and its steps wait until it is (" + offlineCauses + ")"
+		}
+		return ok(fmt.Sprintf("Started tools session %s on instance %s in %s mode. %s; use run_in_instance and the other instance tools with session_id %s. The session ends after a while with no calls, or with end_agent_session.",
+			arg(s.ID), in.InstanceID, in.Mode, pickup, arg(s.ID)), s)
 	})
 
 	add(Spec{
@@ -172,7 +179,7 @@ func init() {
 		Name: "get_agent_session", Title: "Get an agent session",
 		Description: "Get an agent session: its kind, mode, state (starting, running, waiting_approval, idle, terminating, ended, failed, or unknown when the instance's agent has not been heard from) and whether its agent is connected.",
 		Risk:        Read, Idempotent: true,
-		Routes: []string{"GET /agent-sessions/{session_id}"},
+		Routes: []string{sessionGetRoute},
 	}, func(ctx context.Context, c *Call, in agentSessionInput) (*Result, error) {
 		if err := checkIDs("session_id", in.SessionID); err != nil {
 			return nil, err
@@ -188,7 +195,7 @@ func init() {
 		Name: "run_in_instance", Title: "Run a command in an instance",
 		Description: "Run a bash command on the instance of a tools session, as the session's unprivileged user, and wait for it (up to about a minute; longer commands keep running: follow them with get_agent_tool_call). Returns the exit code and the last 16 KiB of stdout and stderr. In an ask session a command outside the safe list waits for the user's approval in the console. Not in a plan session.",
 		Risk:        Write,
-		Routes:      []string{toolCallRoutes, toolCallGetRoute},
+		Routes:      []string{toolCallRoutes, toolCallGetRoute, sessionGetRoute},
 	}, func(ctx context.Context, c *Call, in runInInstanceInput) (*Result, error) {
 		if in.TimeoutSeconds < 0 || in.TimeoutSeconds > 600 {
 			return nil, errorf("timeout_seconds must be 1 to 600.")
@@ -207,7 +214,7 @@ func init() {
 		Name: "read_instance_file", Title: "Read a file on an instance",
 		Description: "Read a file on the instance of a tools session, as the session's user: its first 32 KiB and its size. Works in plan and ask sessions.",
 		Risk:        Write,
-		Routes:      []string{toolCallRoutes, toolCallGetRoute},
+		Routes:      []string{toolCallRoutes, toolCallGetRoute, sessionGetRoute},
 	}, func(ctx context.Context, c *Call, in instanceFileInput) (*Result, error) {
 		return c.callInstanceTool(ctx, in.SessionID, map[string]any{"tool": "read_file", "path": in.Path})
 	})
@@ -216,7 +223,7 @@ func init() {
 		Name: "list_instance_dir", Title: "List a directory on an instance",
 		Description: "List a directory on the instance of a tools session, as the session's user: names, types and sizes, at most 500 entries. Works in plan and ask sessions.",
 		Risk:        Write,
-		Routes:      []string{toolCallRoutes, toolCallGetRoute},
+		Routes:      []string{toolCallRoutes, toolCallGetRoute, sessionGetRoute},
 	}, func(ctx context.Context, c *Call, in instanceFileInput) (*Result, error) {
 		return c.callInstanceTool(ctx, in.SessionID, map[string]any{"tool": "list_dir", "path": in.Path})
 	})
@@ -225,7 +232,7 @@ func init() {
 		Name: "write_instance_file", Title: "Write a file on an instance",
 		Description: "Write a whole file on the instance of a tools session, as the session's user, replacing it if it exists. In an ask session it waits for the user's approval in the console unless a session rule allows it. Not in a plan session.",
 		Risk:        Write,
-		Routes:      []string{toolCallRoutes, toolCallGetRoute},
+		Routes:      []string{toolCallRoutes, toolCallGetRoute, sessionGetRoute},
 	}, func(ctx context.Context, c *Call, in writeInstanceFileInput) (*Result, error) {
 		return c.callInstanceTool(ctx, in.SessionID, map[string]any{"tool": "write_file", "path": in.Path, "content": in.Content})
 	})
@@ -234,7 +241,7 @@ func init() {
 		Name: "get_agent_tool_call", Title: "Get a step in an instance",
 		Description: "Get a step a tools session was asked to carry out: queued, running, waiting_approval (the user must approve or deny it in the console), completed, failed, denied, blocked or timed_out, and its result once it finished.",
 		Risk:        Read, Idempotent: true,
-		Routes: []string{toolCallGetRoute},
+		Routes: []string{toolCallGetRoute, sessionGetRoute},
 	}, func(ctx context.Context, c *Call, in agentToolCallInput) (*Result, error) {
 		if err := checkIDs("session_id", in.SessionID, "call_id", in.CallID); err != nil {
 			return nil, err
@@ -243,7 +250,9 @@ func init() {
 		if err := c.Client.Do(ctx, "GET", "/agent-sessions/"+in.SessionID+"/tool-calls/"+in.CallID, nil, nil, &tc); err != nil {
 			return nil, err
 		}
-		return toolCallResult(&tc), nil
+		res := toolCallResult(&tc)
+		c.noteOffline(ctx, res, &tc)
+		return res, nil
 	})
 
 	add(Spec{
@@ -334,7 +343,25 @@ func (c *Call) callInstanceTool(ctx context.Context, sessionID string, body map[
 		}
 		tc = next
 	}
-	return toolCallResult(&tc), nil
+	res := toolCallResult(&tc)
+	c.noteOffline(ctx, res, &tc)
+	return res, nil
+}
+
+// offlineCauses is why an instance's agent may not be connected.
+const offlineCauses = "the instance may be stopped, still starting, or unreachable: get_instance_agent shows when it last checked in"
+
+// noteOffline adds to a step still queued that the session's agent is not
+// connected, when it is not: otherwise "queued" reads as "about to run".
+func (c *Call) noteOffline(ctx context.Context, res *Result, tc *agentToolCall) {
+	if tc.Status != "queued" {
+		return
+	}
+	var s agentSession
+	if err := c.Client.Do(ctx, "GET", "/agent-sessions/"+tc.SessionID, nil, nil, &s); err != nil || s.Connected {
+		return
+	}
+	res.Text += " The instance's agent is not connected right now, so it runs once the agent is back (" + offlineCauses + ")."
 }
 
 func finishedToolCall(status string) bool {
