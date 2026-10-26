@@ -31,6 +31,8 @@ tagged and released (binaries on GitHub, the image on ghcr.io).
   forwards a port to it, and names it; an instance's own address no longer raises the warning.
 - An instance tool refused to a standard API key (the local server's) says to use the hosted server,
   connected as an AI app: Pantech offers instance tools only there for now.
+- When an instance's agent is not connected, `start_tools_session` and a step still queued say so,
+  instead of "picks it up within seconds".
 
 ## v0.2.0 — 2026-10-24
 
