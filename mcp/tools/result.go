@@ -58,9 +58,10 @@ func ok(text string, data any) (*Result, error) { return &Result{Text: text, Dat
 
 // The one-line fixes for the errors a user can fix themselves.
 var hints = map[string]string{
-	"AI_APPS_DISABLED":   "Fix: an owner of the organization can turn AI app access back on in the console under Organization › AI apps.",
-	"INSUFFICIENT_SCOPE": "Fix: reconnect this AI app with a higher access level (Manage, or Manage and delete for deletions), or do this in the console.",
-	"UNAUTHENTICATED":    "Fix: reconnect this AI app to Pantech (its access has expired or was revoked), or for a local server run `pantech auth login`.",
+	"AGENT_SESSIONS_NOT_FOR_API_KEYS": "Fix: work inside an instance through Pantech's hosted MCP server, connected as an AI app; a standard API key (the local server's) cannot for now.",
+	"AI_APPS_DISABLED":                "Fix: an owner of the organization can turn AI app access back on in the console under Organization › AI apps.",
+	"INSUFFICIENT_SCOPE":              "Fix: reconnect this AI app with a higher access level (Manage, or Manage and delete for deletions), or do this in the console.",
+	"UNAUTHENTICATED":                 "Fix: reconnect this AI app to Pantech (its access has expired or was revoked), or for a local server run `pantech auth login`.",
 }
 
 // errNoCredentials is returned when a call has no API key to use.

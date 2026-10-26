@@ -29,6 +29,8 @@ tagged and released (binaries on GitHub, the image on ghcr.io).
   the call's own id, tool and status are left out of the result.
 - The `delete_instance` preview warns about a public IP only when one is mapped to the instance or
   forwards a port to it, and names it; an instance's own address no longer raises the warning.
+- An instance tool refused to a standard API key (the local server's) says to use the hosted server,
+  connected as an AI app: Pantech offers instance tools only there for now.
 
 ## v0.2.0 — 2026-10-24
 

@@ -117,7 +117,9 @@ is opened, and the result is a ready-to-run `ssh` command that uses your own SSH
 never sees it).
 
 The instance tools let your AI app work inside one of your instances, with no model running there
-and no SSH key or password involved. Enable the instance's Pantech agent in the console (its
+and no SSH key or password involved. For now they work only through the hosted server, connected
+as an AI app: Pantech refuses them to a standard API key, so the local server cannot use them.
+Enable the instance's Pantech agent in the console (its
 Agent tab) first. `start_tools_session` opens a session in `plan` mode (reads only) or `ask` mode;
 each step then runs as the session's unprivileged user, under platform policy (the agent itself
 and its files cannot be touched). In `ask` mode, anything outside a safe list waits until you
