@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	pantech "github.com/Pantech-Dynamics/pantech-go"
@@ -218,7 +219,8 @@ func init() {
 		Name: "delete_instance", Title: "Delete an instance",
 		Description: "Delete an instance. It is stopped, a safety snapshot of its root disk is kept for 24 hours, then it is removed. Attached volumes are detached, not deleted. Needs an AI app connected with Manage and delete access.",
 		Risk:        Destructive, Destructive: true, Idempotent: true,
-		Routes: []string{"GET /instances/{instance_id}", "GET /instances/{instance_id}/volumes", "DELETE /instances/{instance_id}", "GET /operations/{operation_id}"},
+		Routes: []string{"GET /instances/{instance_id}", "GET /instances/{instance_id}/volumes", "GET /public-ips",
+			"GET /public-ips/{public_ip_id}/port-forwarding-rules", "DELETE /instances/{instance_id}", "GET /operations/{operation_id}"},
 	}, func(ctx context.Context, c *Call, in deleteInstanceInput) (*Preview, error) {
 		if err := checkIDs("instance_id", in.InstanceID); err != nil {
 			return nil, err
@@ -239,8 +241,8 @@ func init() {
 		if vm.DeletionProtection {
 			p.Warnings = append(p.Warnings, "Deletion protection is on: the API will refuse until it is turned off in the console.")
 		}
-		if vm.PublicIPv4 != nil {
-			p.Warnings = append(p.Warnings, "It has a public IP: release it and delete port forwarding rules that point at it first, or the delete is refused.")
+		if blocking := c.publicIPsBlocking(ctx, vm.ID); len(blocking) > 0 {
+			p.Warnings = append(p.Warnings, fmt.Sprintf("Public IP %s points at it: release it or delete the port forwarding rules that point at this instance first, or the delete is refused.", strings.Join(blocking, ", ")))
 		}
 		return p, nil
 	}, func(ctx context.Context, c *Call, in deleteInstanceInput) (*Result, error) {
@@ -660,4 +662,40 @@ func (c *Call) snapshotPrice(ctx context.Context, sizeGB int) string {
 		}
 	}
 	return price
+}
+
+// publicIPsBlocking is the ids of the public IPs that keep an instance from
+// being deleted: one mapped to it, or one with a port forwarding rule to it.
+// An instance's own address (a standard instance's) does not. When they
+// cannot be listed it says nothing: the delete itself is then refused with
+// the API's own reason.
+func (c *Call) publicIPsBlocking(ctx context.Context, instanceID string) []string {
+	ips, err := c.Client.PublicIPs.List(ctx, nil)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, ip := range ips {
+		if ip.DesiredState == "deleted" {
+			continue
+		}
+		if ip.InstanceID != nil && *ip.InstanceID == instanceID {
+			out = append(out, ip.ID)
+			continue
+		}
+		if ip.Purpose != "port_forwarding" {
+			continue
+		}
+		rules, err := c.Client.PortForwardingRules.List(ctx, ip.ID)
+		if err != nil {
+			continue
+		}
+		for _, r := range rules {
+			if r.InstanceID == instanceID {
+				out = append(out, ip.ID)
+				break
+			}
+		}
+	}
+	return out
 }

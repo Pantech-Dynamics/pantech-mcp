@@ -30,7 +30,9 @@ type Result struct {
 }
 
 // render turns r into the SDK's result: content is the summary plus the data
-// fenced as untrusted, and structuredContent is the data with the same notice.
+// fenced as untrusted, and structuredContent is the summary, the same notice
+// and the data. Some clients show a model only structuredContent, so the
+// summary, which carries what to do next, is in both.
 // json.Marshal escapes <, > and &, so no value in the data can close the fence.
 func (r *Result) render() (*sdk.CallToolResult, any, error) {
 	text := r.Text
@@ -41,7 +43,7 @@ func (r *Result) render() (*sdk.CallToolResult, any, error) {
 			return nil, nil, fmt.Errorf("encoding the result: %w", err)
 		}
 		text += "\n\n" + UntrustedNotice + "\n<untrusted-data>\n" + string(data) + "\n</untrusted-data>"
-		structured = map[string]any{"notice": UntrustedNotice, "data": json.RawMessage(data)}
+		structured = map[string]any{"summary": r.Text, "notice": UntrustedNotice, "data": json.RawMessage(data)}
 	}
 	res := &sdk.CallToolResult{Content: []sdk.Content{&sdk.TextContent{Text: text}}, IsError: r.IsError}
 	if r.IsError {
