@@ -42,6 +42,13 @@ var wantRisk = map[string]Risk{
 	"list_node_pools": Read, "create_node_pool": Cost, "delete_node_pool": Destructive, "list_kubernetes_addons": Read,
 	"toggle_kubernetes_addon": Destructive, "list_cluster_nodes": Read, "list_cluster_workloads": Read,
 	"delete_ssh_key": Destructive, "list_webhook_deliveries": Read,
+
+	// Tools sessions: every step runs as the session's unprivileged user and,
+	// in an ask session, waits for a person's approval in the console outside
+	// a safe list, so the steps are plain writes here.
+	"get_instance_agent": Read, "start_tools_session": Write, "list_agent_sessions": Read, "get_agent_session": Read,
+	"run_in_instance": Write, "read_instance_file": Write, "list_instance_dir": Write, "write_instance_file": Write,
+	"get_agent_tool_call": Read, "list_agent_session_events": Read, "end_agent_session": Write, "get_agent_session_report": Read,
 }
 
 // noConfirmation are the only write routes a one-step tool may call although

@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -35,6 +36,7 @@ type createInstanceInput struct {
 	SecurityGroupID string            `json:"security_group_id,omitempty" jsonschema:"Standard instances only: one of your security groups."`
 	Encrypted       bool              `json:"encrypted,omitempty" jsonschema:"Encrypt the disk."`
 	Tags            map[string]string `json:"tags,omitempty" jsonschema:"Your own labels."`
+	Agent           bool              `json:"agent,omitempty" jsonschema:"Install the Pantech agent at first boot, so start_tools_session can work in the instance with no login to it. Set at creation only."`
 	Confirmation
 }
 
@@ -105,14 +107,17 @@ func init() {
 			Action: fmt.Sprintf("Create a new %s instance on plan %s (%d vCPU, %d MB memory, %d GB disk) with image %s.",
 				placement, plan.Slug, plan.VCPU, plan.MemoryMB, plan.DiskGB, arg(in.ImageSlug)),
 			Price: planPrice(plan),
-			Data:  map[string]any{"request": in.request(), "plan": plan},
+			Data:  map[string]any{"request": in.request(), "plan": plan, "agent": in.Agent},
+		}
+		if in.Agent {
+			p.Action += " The Pantech agent is installed at first boot, so an AI app can work in it through a tools session."
 		}
 		if note := c.creditNote(ctx); note != "" {
 			p.Warnings = append(p.Warnings, note)
 		}
 		return p, nil
 	}, func(ctx context.Context, c *Call, in createInstanceInput) (*Result, error) {
-		order, err := c.Client.Instances.Create(ctx, in.request(), c.writeOpts()...)
+		order, err := c.createInstance(ctx, in)
 		if err != nil {
 			return nil, err
 		}
@@ -270,6 +275,28 @@ func init() {
 		}
 		return c.finish(ctx, acc, fmt.Sprintf("instance %s now accepts SSH key %s", in.InstanceID, in.SSHKeyID))
 	})
+}
+
+// createInstance places the order. The SDK's request has no agent_enabled
+// yet, so an instance with the agent is sent through Do with the field added.
+func (c *Call) createInstance(ctx context.Context, in createInstanceInput) (*pantech.OrderAccepted, error) {
+	if !in.Agent {
+		return c.Client.Instances.Create(ctx, in.request(), c.writeOpts()...)
+	}
+	raw, err := json.Marshal(in.request())
+	if err != nil {
+		return nil, err
+	}
+	var body map[string]any
+	if err := json.Unmarshal(raw, &body); err != nil {
+		return nil, err
+	}
+	body["agent_enabled"] = true
+	var order pantech.OrderAccepted
+	if err := c.Client.Do(ctx, "POST", "/instances", nil, body, &order, c.writeOpts()...); err != nil {
+		return nil, err
+	}
+	return &order, nil
 }
 
 func (in createInstanceInput) request() pantech.CreateInstanceRequest {

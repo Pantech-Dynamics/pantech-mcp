@@ -97,6 +97,7 @@ or credentials file that other users can write, and an API URL that is not https
 | Storage | `list_volumes`, `create_volume` ★, `attach_volume`, `detach_volume`, `resize_volume` ★, `delete_volume` ★, `get_volume_usage`, `list_snapshots`, `create_snapshot` ★, `restore_snapshot` ★, `delete_snapshot` ★, `get_snapshot_schedule`, `set_snapshot_schedule` ★ |
 | Databases | `list_databases`, `get_database`, `create_database` ★, `get_database_order`, `start_database`, `stop_database`, `resize_database_storage` ★, `update_database_access_rules` ★, `list_database_snapshots`, `create_database_snapshot` ★, `delete_database` ★ |
 | Kubernetes | `list_kubernetes_clusters`, `get_kubernetes_cluster`, `create_kubernetes_cluster` ★, `start_kubernetes_cluster`, `stop_kubernetes_cluster`, `delete_kubernetes_cluster` ★, `list_node_pools`, `create_node_pool` ★, `scale_node_pool` ★, `delete_node_pool` ★, `list_kubernetes_addons`, `toggle_kubernetes_addon` ★, `list_cluster_nodes`, `list_cluster_workloads` |
+| Inside an instance | `get_instance_agent`, `start_tools_session`, `run_in_instance`, `read_instance_file`, `write_instance_file`, `list_instance_dir`, `get_agent_tool_call`, `list_agent_sessions`, `get_agent_session`, `list_agent_session_events`, `end_agent_session`, `get_agent_session_report` |
 | Other | `list_webhooks`, `list_webhook_deliveries`, `get_operation`, `wait_for_operation` |
 
 Resource: `pantech://docs/agent-brief`. Prompts: `deploy_web_app`, `explain_my_bill`,
@@ -114,6 +115,15 @@ your AI app connects from: for a web-based AI app (in a browser) that is the app
 you, so open SSH from the console or CLI instead. The preview names the address before anything
 is opened, and the result is a ready-to-run `ssh` command that uses your own SSH key (this server
 never sees it).
+
+The instance tools let your AI app work inside one of your instances, with no model running there
+and no SSH key or password involved. Enable the instance's Pantech agent in the console (its
+Agent tab) first. `start_tools_session` opens a session in `plan` mode (reads only) or `ask` mode;
+each step then runs as the session's unprivileged user, under platform policy (the agent itself
+and its files cannot be touched). In `ask` mode, anything outside a safe list waits until you
+approve it in the console, under the session: an AI app cannot approve its own steps. Output is
+returned as data, cut to its last 16 KiB. You see every step in the console and can end the
+session at any time.
 
 Changes run in the background: tools wait up to a minute (sending progress notifications when the
 app asks for them), then return an operation id for `wait_for_operation`.
