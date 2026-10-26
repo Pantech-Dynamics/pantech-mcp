@@ -18,6 +18,16 @@ tagged and released (binaries on GitHub, the image on ghcr.io).
 - `create_instance` takes `agent: true` to install the Pantech agent at first boot, so an AI app
   can create an instance and then work in it with no login to it.
 
+### Fixed
+
+- Every result's structured content now carries the summary and the untrusted-data notice beside
+  the data, so a client that shows a model only structured content still sees what happened and
+  what to do next.
+- A step run in an instance returns its output once: the short preview and the fields that repeat
+  the call's own id, tool and status are left out of the result.
+- The `delete_instance` preview warns about a public IP only when one is mapped to the instance or
+  forwards a port to it, and names it; an instance's own address no longer raises the warning.
+
 ## v0.2.0 — 2026-10-24
 
 ### Added

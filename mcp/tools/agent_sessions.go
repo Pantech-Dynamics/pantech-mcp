@@ -379,5 +379,38 @@ func toolCallResult(tc *agentToolCall) *Result {
 	default:
 		text = fmt.Sprintf("Call %s is %s on the instance.", id, arg(tc.Status)) + follow
 	}
-	return &Result{Text: text, Data: tc}
+	return &Result{Text: text, Data: slimToolCall(tc)}
+}
+
+// slimToolCall is the call as the API returned it, less what its result
+// repeats: output is the console's few-line preview of stdout, content or
+// entries, which are there in full, and the result's own copies of the
+// call's id, tool and status (kept when they say something the call does not).
+func slimToolCall(tc *agentToolCall) *agentToolCall {
+	var r map[string]json.RawMessage
+	if len(tc.Result) == 0 || json.Unmarshal(tc.Result, &r) != nil {
+		return tc
+	}
+	for _, full := range []string{"stdout", "content", "entries", "bytes"} {
+		if _, ok := r[full]; ok {
+			delete(r, "output")
+			break
+		}
+	}
+	for _, repeated := range []string{"call_id", "tool_use_id", "is_error"} {
+		delete(r, repeated)
+	}
+	for field, same := range map[string]string{"tool": tc.Tool, "status": tc.Status} {
+		var v string
+		if json.Unmarshal(r[field], &v) == nil && v == same {
+			delete(r, field)
+		}
+	}
+	slim, err := json.Marshal(r)
+	if err != nil {
+		return tc
+	}
+	out := *tc
+	out.Result = slim
+	return &out
 }
