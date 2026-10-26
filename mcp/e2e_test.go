@@ -868,6 +868,16 @@ func TestInstanceStepsFenceWhatTheInstanceReported(t *testing.T) {
 		t.Fatalf("tool call requests: %+v", posts)
 	}
 
+	// A refused step says it did not run without claiming who refused it: an
+	// approval nobody answered is closed the same way.
+	api.mu.Lock()
+	api.toolStatus = "denied"
+	api.mu.Unlock()
+	_, text = call(t, cs, "get_agent_tool_call", map[string]any{"session_id": "ags_1", "call_id": "call_1"})
+	if !strings.HasPrefix(text, "Call call_1 did not run: the user denied it, or nobody answered it in time") {
+		t.Errorf("a denied step: %s", text)
+	}
+
 	api.mu.Lock()
 	api.toolStatus = "waiting_approval"
 	api.mu.Unlock()

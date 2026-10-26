@@ -20,6 +20,8 @@ tagged and released (binaries on GitHub, the image on ghcr.io).
 
 ### Fixed
 
+- A step that did not run because its approval was denied, or because nobody answered it in time,
+  no longer says the user denied it.
 - Every result's structured content now carries the summary and the untrusted-data notice beside
   the data, so a client that shows a model only structured content still sees what happened and
   what to do next.
