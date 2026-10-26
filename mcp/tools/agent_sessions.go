@@ -371,7 +371,9 @@ func toolCallResult(tc *agentToolCall) *Result {
 	case "timed_out":
 		text = fmt.Sprintf("Call %s ran out of time and was stopped.", id)
 	case "denied":
-		text = fmt.Sprintf("The user denied call %s. Do not repeat it; ask them what they want instead.", id)
+		// Denied by the user, or closed because nobody answered within 15
+		// minutes: the reason, written on the instance, is in the data.
+		text = fmt.Sprintf("Call %s did not run: the user denied it, or nobody answered it in time (the reason is in the data). Do not repeat it; ask them what they want instead.", id)
 	case "blocked":
 		text = fmt.Sprintf("Call %s was refused without asking: platform policy does not allow it, or the session's mode does not.", id)
 	case "waiting_approval":
