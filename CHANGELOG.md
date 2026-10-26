@@ -20,6 +20,8 @@ tagged and released (binaries on GitHub, the image on ghcr.io).
 
 ### Fixed
 
+- A cut file or folder listing says only its start was shown, not its end, and a failed step no
+  longer claims it ran (a binary file or an ended session never runs it).
 - A step that did not run because its approval was denied, or because nobody answered it in time,
   no longer says the user denied it.
 - Every result's structured content now carries the summary and the untrusted-data notice beside

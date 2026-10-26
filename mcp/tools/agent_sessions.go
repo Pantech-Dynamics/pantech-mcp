@@ -363,11 +363,20 @@ func toolCallResult(tc *agentToolCall) *Result {
 				text = fmt.Sprintf("Call %s completed with exit code %d.", id, *r.ExitCode)
 			}
 			if r.Truncated {
-				text += " The output was cut; only its end is shown."
+				// A command's output keeps its end; a file and a listing keep their start.
+				switch tc.Tool {
+				case "read_file":
+					text += " The file is longer than shown; only its start was read."
+				case "list_dir":
+					text += " The folder has more entries than shown; only the first are listed."
+				default:
+					text += " The output was cut; only its end is shown."
+				}
 			}
 		}
 	case "failed":
-		text = fmt.Sprintf("Call %s ran and failed: the details are in the data.", id)
+		// It may not have run at all: a binary file, or a session that ended first.
+		text = fmt.Sprintf("Call %s failed: the reason is in the data.", id)
 	case "timed_out":
 		text = fmt.Sprintf("Call %s ran out of time and was stopped.", id)
 	case "denied":
