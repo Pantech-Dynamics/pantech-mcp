@@ -264,11 +264,7 @@ func init() {
 		if err := checkIDs("session_id", in.SessionID); err != nil {
 			return nil, err
 		}
-		limit := in.Limit
-		if limit <= 0 || limit > 500 {
-			limit = 100
-		}
-		q := url.Values{"limit": {fmt.Sprint(limit)}}
+		q := url.Values{"limit": {fmt.Sprint(eventsLimit(in.Limit))}}
 		if in.After > 0 {
 			q.Set("after", fmt.Sprint(in.After))
 		}
@@ -451,4 +447,16 @@ func slimToolCall(tc *agentToolCall) *agentToolCall {
 	out := *tc
 	out.Result = slim
 	return &out
+}
+
+// eventsLimit is how many events to ask for: 100 when unset, and at most 500,
+// so a larger limit still gets the most it can, like listLimit.
+func eventsLimit(n int) int {
+	switch {
+	case n <= 0:
+		return 100
+	case n > 500:
+		return 500
+	}
+	return n
 }

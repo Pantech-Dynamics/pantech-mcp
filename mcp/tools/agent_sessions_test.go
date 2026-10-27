@@ -27,3 +27,12 @@ func TestToolCallSummaries(t *testing.T) {
 		}
 	}
 }
+
+// A limit over 500 asks for 500, not the default.
+func TestEventsLimit(t *testing.T) {
+	for n, want := range map[int]int{0: 100, -1: 100, 1: 1, 250: 250, 500: 500, 501: 500, 10000: 500} {
+		if got := eventsLimit(n); got != want {
+			t.Errorf("eventsLimit(%d) = %d, want %d", n, got, want)
+		}
+	}
+}
