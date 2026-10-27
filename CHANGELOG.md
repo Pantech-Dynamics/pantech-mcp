@@ -35,6 +35,7 @@ tagged and released (binaries on GitHub, the image on ghcr.io).
   connected as an AI app: Pantech offers instance tools only there for now.
 - When an instance's agent is not connected, `start_tools_session` and a step still queued say so,
   instead of "picks it up within seconds".
+- `list_agent_session_events` with a `limit` over 500 returns 500 events, not the default 100.
 
 ## v0.2.0 — 2026-10-24
 
