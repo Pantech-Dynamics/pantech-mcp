@@ -9,6 +9,7 @@ DELETE /instances/{instance_id}/private-network
 DELETE /kubernetes-clusters/{cluster_id}
 DELETE /kubernetes-clusters/{cluster_id}/node-pools/{pool_id}
 DELETE /load-balancers/{load_balancer_id}
+DELETE /migrations/{migration_id}
 DELETE /networks/{network_id}
 DELETE /port-forwarding-rules/{rule_id}
 DELETE /public-ips/{public_ip_id}

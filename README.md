@@ -17,7 +17,7 @@
 
 `pantech-mcp` lets AI apps work with your Pantech Dynamics cloud: list and create instances,
 networks, firewalls, public IPs, load balancers, volumes, snapshots, managed databases and
-Kubernetes clusters, price a setup, and explain your bill. See
+Kubernetes clusters, price a setup, explain your bill, and plan a move from AWS. See
 [Set up your AI app](#set-up-your-ai-app) for the supported apps.
 
 Anything that costs money, opens access from the internet, or deletes or overwrites something is
@@ -98,6 +98,7 @@ or credentials file that other users can write, and an API URL that is not https
 | Databases | `list_databases`, `get_database`, `create_database` ★, `get_database_order`, `start_database`, `stop_database`, `resize_database_storage` ★, `update_database_access_rules` ★, `list_database_snapshots`, `create_database_snapshot` ★, `delete_database` ★ |
 | Kubernetes | `list_kubernetes_clusters`, `get_kubernetes_cluster`, `create_kubernetes_cluster` ★, `start_kubernetes_cluster`, `stop_kubernetes_cluster`, `delete_kubernetes_cluster` ★, `list_node_pools`, `create_node_pool` ★, `scale_node_pool` ★, `delete_node_pool` ★, `list_kubernetes_addons`, `toggle_kubernetes_addon` ★, `list_cluster_nodes`, `list_cluster_workloads` |
 | Inside an instance | `get_instance_agent`, `start_tools_session`, `run_in_instance`, `read_instance_file`, `write_instance_file`, `list_instance_dir`, `get_agent_tool_call`, `list_agent_sessions`, `get_agent_session`, `list_agent_session_events`, `end_agent_session`, `get_agent_session_report` |
+| Migrate (from AWS) | `connect_cloud_account`, `list_cloud_connections`, `get_cloud_connection`, `set_cloud_role`, `retry_cloud_connection`, `disconnect_cloud_account`, `scan_cloud_account` ★, `list_cloud_scans`, `get_cloud_scan`, `plan_migration`, `list_migrations`, `get_migration`, `update_migration_item`, `rename_migration`, `delete_migration` ★, `export_migration_terraform` |
 | Other | `list_webhooks`, `list_webhook_deliveries`, `get_operation`, `wait_for_operation` |
 
 Resource: `pantech://docs/agent-brief`. Prompts: `deploy_web_app`, `explain_my_bill`,
@@ -126,6 +127,16 @@ and its files cannot be touched). In `ask` mode, anything outside a safe list wa
 approve it in the console, under the session: an AI app cannot approve its own steps. Output is
 returned as data, cut to its last 16 KiB. You see every step in the console and can end the
 session at any time.
+
+The Migrate tools plan a move from an AWS account. Your AI app only guides you: Pantech reads the
+account itself, through a read-only role you create in it from the link `connect_cloud_account`
+returns (the role's template can also be downloaded in the Pantech console, or with `pantech migrate connect` in
+the CLI), and you never give the app
+or Pantech access keys, only the role's ARN. A scan costs USD 0.01 on your AWS bill for reading
+spend, so it is two-step. A plan maps what the scan found to Pantech, flags what cannot move yet
+and compares Pantech's monthly price with your current bill; nothing is created until you export
+it with `export_migration_terraform` and apply the Terraform yourself. Copying servers is not
+available yet.
 
 Changes run in the background: tools wait up to a minute (sending progress notifications when the
 app asks for them), then return an operation id for `wait_for_operation`.

@@ -49,13 +49,28 @@ var wantRisk = map[string]Risk{
 	"get_instance_agent": Read, "start_tools_session": Write, "list_agent_sessions": Read, "get_agent_session": Read,
 	"run_in_instance": Write, "read_instance_file": Write, "list_instance_dir": Write, "write_instance_file": Write,
 	"get_agent_tool_call": Read, "list_agent_session_events": Read, "end_agent_session": Write, "get_agent_session_report": Read,
+
+	// v0.3.0, Pantech Migrate: Pantech only reads the other cloud, and a plan creates
+	// nothing, so most steps are plain writes. A scan costs USD 0.01 on the
+	// user's AWS bill, so it is confirmed.
+	"connect_cloud_account": Write, "list_cloud_connections": Read, "get_cloud_connection": Read,
+	"set_cloud_role": Write, "retry_cloud_connection": Write, "disconnect_cloud_account": Write,
+	"scan_cloud_account": Cost, "list_cloud_scans": Read, "get_cloud_scan": Read,
+	"plan_migration": Write, "list_migrations": Read, "get_migration": Read, "update_migration_item": Write,
+	"rename_migration": Write, "delete_migration": Destructive, "export_migration_terraform": Read,
 }
 
 // noConfirmation are the only write routes a one-step tool may call although
 // they would otherwise need confirmation, and why. Closing temporary SSH access
-// only takes access away, and the API treats it as a plain write.
+// and disconnecting a cloud account only take access away, and the API treats
+// them as plain writes; the Migrate PATCH routes edit a connection or a plan,
+// which creates, bills, opens and deletes nothing.
 var noConfirmation = map[string]string{
 	"DELETE /instances/{instance_id}/ssh-access/{grant_id}": "revoke_ssh_access only closes a port",
+	"DELETE /cloud-connections/{connection_id}":             "disconnect_cloud_account only takes Pantech's access away",
+	"PATCH /cloud-connections/{connection_id}":              "set_cloud_role and retry_cloud_connection only queue a check of the role",
+	"PATCH /migrations/{migration_id}":                      "rename_migration only renames a plan",
+	"PATCH /migrations/{migration_id}/items":                "update_migration_item only edits a plan; nothing is created",
 }
 
 var toolName = regexp.MustCompile(`^[a-z][a-z0-9_]{1,63}$`)
@@ -236,6 +251,24 @@ func TestMoneyIsExact(t *testing.T) {
 	} {
 		if got := money(c.minor, c.currency); got != c.want {
 			t.Errorf("money(%d, %s) = %q, want %q", c.minor, c.currency, got, c.want)
+		}
+	}
+}
+
+func TestRoleARNIsTheCommercialPartitionOnly(t *testing.T) {
+	for arn, want := range map[string]bool{
+		"arn:aws:iam::123456789012:role/pantech-migrate":           true,
+		"arn:aws:iam::123456789012:role/path/to/Role_1+=,.@-":      true,
+		"arn:aws-us-gov:iam::123456789012:role/pantech-migrate":    false,
+		"arn:aws-cn:iam::123456789012:role/pantech-migrate":        false,
+		"arn:aws:iam::12345678901:role/pantech-migrate":            false,
+		"arn:aws:iam::123456789012:user/someone":                   false,
+		"arn:aws:iam::123456789012:role/name with space":           false,
+		"AKIAIOSFODNN7EXAMPLE":                                     false,
+		"arn:aws:iam::123456789012:role/pantech-migrate\nPrice: 0": false,
+	} {
+		if got := roleARNPattern.MatchString(arn); got != want {
+			t.Errorf("%q: got %v, want %v", arn, got, want)
 		}
 	}
 }

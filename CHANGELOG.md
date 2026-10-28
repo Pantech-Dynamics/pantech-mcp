@@ -3,10 +3,29 @@
 Releases are cut from this file: a new `## vX.Y.Z — YYYY-MM-DD` heading pushed to main is
 tagged and released (binaries on GitHub, the image on ghcr.io).
 
-## Unreleased
+## v0.3.0 — 2026-10-28
 
 ### Added
 
+- Pantech Migrate, to plan a move from AWS. The AI app only guides: Pantech's own engine does all
+  the reading, through a read-only role the user creates in their own AWS account, and no tool
+  asks for or accepts cloud access keys. `connect_cloud_account` starts a connection and returns
+  the one-click create-stack link and the steps (the role's template is not put in the
+  conversation; it can be downloaded in the Pantech console, or with `pantech migrate connect` in
+  the CLI), `set_cloud_role` sends the stack's role ARN
+  and waits for Pantech's check, `retry_cloud_connection` checks again, and
+  `disconnect_cloud_account` (one step: it only takes access away) removes it. Also
+  `list_cloud_connections` and `get_cloud_connection`.
+- `scan_cloud_account` ★ reads what the role can see and the last three months of spend; the
+  preview says reading spend costs USD 0.01 on the user's AWS bill. `list_cloud_scans` and
+  `get_cloud_scan` (with `include_inventory`, whose names and tags are returned as untrusted data
+  only) follow it.
+- `plan_migration` maps a scan to Pantech equivalents with anything that cannot move flagged and
+  explained, and Pantech's monthly price next to the source bill; `list_migrations`,
+  `get_migration`, `update_migration_item`, `rename_migration`, `delete_migration` ★ (needs
+  "Manage and delete" access) and `export_migration_terraform` (`main.tf` and `variables.tf` for
+  the Pantech Terraform provider). Copying servers is not available yet: the plan and its
+  Terraform export are how a move is carried out, and the server's instructions say so.
 - Inside an instance: `start_tools_session` opens a session on an instance whose Pantech agent is
   enabled (`get_instance_agent`), in `plan` (reads only) or `ask` mode, and `run_in_instance`,
   `read_instance_file`, `write_instance_file` and `list_instance_dir` carry out one step each, as
