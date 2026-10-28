@@ -48,12 +48,16 @@ func init() {
 		Name: "create_load_balancer", Title: "Create a load balancer",
 		Description: "Spread one TCP port of a public address across instances. The port becomes reachable from the internet (limit it with cidr_list). An appliance load balancer is a VM billed as such.",
 		Risk:        Cost,
-		Routes:      []string{"POST /load-balancers", "GET /operations/{operation_id}"},
+		Routes:      []string{"POST /load-balancers", "GET /operations/{operation_id}", "GET /billing/credit", "GET /plans", "POST /pricing/estimate"},
 	}, func(ctx context.Context, c *Call, in createLoadBalancerInput) (*Preview, error) {
+		price := "no extra charge: a vpc_native load balancer uses the public IP you already pay for"
+		if in.Kind == "appliance" {
+			price = c.appliancePrice(ctx)
+		}
 		p := &Preview{
 			Action: fmt.Sprintf("Create a %s load balancer on public port %d spreading traffic across %s.",
 				arg(valueOr(in.Kind, "vpc_native")), in.PublicPort, plural(len(in.InstanceIDs), "instance", "instances")),
-			Price: "not quoted by the API: a vpc_native load balancer uses the public IP you already pay for; an appliance load balancer is billed as a VM (see list_plans)",
+			Price: price,
 			Data:  map[string]any{"request": in.request()},
 		}
 		if len(in.CIDRList) == 0 {
@@ -195,4 +199,51 @@ func (in updateLoadBalancerInput) request() pantech.UpdateLoadBalancerRequest {
 		req.Algorithm = pantech.Ptr(in.Algorithm)
 	}
 	return req
+}
+
+// The appliance VM's size. The platform bills an appliance load balancer as
+// exactly these, plus its public IPv4, every hour it exists (its billable
+// hours use the same meters as a machine), so a machine estimate of this size
+// is its price.
+const (
+	applianceVCPU     = 1
+	applianceMemoryMB = 1024
+	applianceDiskGB   = 25
+)
+
+// appliancePrice estimates an appliance load balancer's month: a 1 vCPU,
+// 1 GB plan in a standard zone running all month, plus the root disk the
+// plan lacks. Best effort: without a price it says how it is billed.
+func (c *Call) appliancePrice(ctx context.Context) string {
+	const unquoted = "billed as a 1 vCPU, 1 GB VM with a 25 GB disk and a public IPv4, every hour it exists"
+	credit, err := c.Client.Billing.GetCredit(ctx)
+	if err != nil {
+		return unquoted
+	}
+	plans, err := c.Client.Catalog.ListPlans(ctx, &pantech.ListPlansParams{Placement: "standard"})
+	if err != nil {
+		return unquoted
+	}
+	var plan *pantech.Plan
+	for i := range plans {
+		p := &plans[i]
+		if p.VCPU == applianceVCPU && p.MemoryMB == applianceMemoryMB && p.DiskGB <= applianceDiskGB &&
+			(plan == nil || p.DiskGB > plan.DiskGB) {
+			plan = p
+		}
+	}
+	if plan == nil {
+		return unquoted
+	}
+	req := pantech.PricingEstimateRequest{Currency: credit.Currency, Machines: &[]pantech.PricingEstimateMachineRequest{{
+		PlanSlug: plan.Slug, Quantity: 1, RunningHours: 730, Placement: pantech.Ptr("standard"),
+	}}}
+	if extra := applianceDiskGB - plan.DiskGB; extra > 0 {
+		req.ExtraStorageGB = pantech.Ptr(extra)
+	}
+	est, err := c.Client.Catalog.EstimatePrice(ctx, req)
+	if err != nil || !est.PricingComplete {
+		return unquoted
+	}
+	return fmt.Sprintf("about %s a month (an estimate: %s, running all month)", money(est.PricedSubtotalMinor, est.Currency), unquoted)
 }

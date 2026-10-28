@@ -102,6 +102,8 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		reply(200, `{"id":"ord_1","status":"provisioned","operation_id":"op_create","amount_minor":500000,"currency":"NGN"}`)
 	case r.Method == "GET" && path == "/plans":
 		reply(200, `{"data":[{"id":"plan_1","slug":"s-1","name":"Small","vcpu":1,"memory_mb":1024,"disk_gb":25,"price":{"currency":"NGN","monthly_estimate_minor":1250000,"initial_payment_minor":500000}},{"id":"plan_2","slug":"x1","name":"X","vcpu":2,"memory_mb":2048,"disk_gb":50,"price":{"currency":"NGN","monthly_estimate_minor":2500000}}],"next_cursor":null}`)
+	case r.Method == "POST" && path == "/pricing/estimate":
+		reply(200, `{"currency":"NGN","machines":[],"pricing_complete":true,"priced_subtotal_minor":1312345}`)
 	case r.Method == "GET" && path == "/billing/credit":
 		reply(200, `{"currency":"NGN","available_minor":1234567,"estimated_next_invoice_minor":123400,"next_invoice_at":"2026-11-01T00:00:00Z","standing":"covered"}`)
 	case r.Method == "POST" && strings.HasSuffix(path, "/ssh-access"):
@@ -339,6 +341,26 @@ func TestEndToEndCreateInstanceTwoStep(t *testing.T) {
 	defer progressMu.Unlock()
 	if len(progress) == 0 {
 		t.Error("no progress notifications despite a progressToken")
+	}
+}
+
+func TestEndToEndApplianceLoadBalancerPreviewIsPriced(t *testing.T) {
+	api, srv := newFakeAPI(t)
+	cs := connect(t, srv.URL+apiPrefix, testKey, nil)
+	res, text := call(t, cs, "create_load_balancer", map[string]any{"name": "web", "kind": "appliance", "zone_id": "af-abj-1", "public_port": 80})
+	if res.IsError || !strings.Contains(text, "about NGN 13,123.45 a month") {
+		t.Fatalf("preview:\n%s", text)
+	}
+	est := api.calls("POST", "/pricing/estimate")
+	if len(est) != 1 || !strings.Contains(est[0].Body, `"plan_slug":"s-1"`) || strings.Contains(est[0].Body, "extra_storage_gb") {
+		t.Fatalf("estimate request = %+v; want the 1 vCPU, 1 GB, 25 GB plan and no extra storage", est)
+	}
+	if n := len(api.calls("POST", "/load-balancers")); n != 0 {
+		t.Fatalf("the preview created %d load balancers", n)
+	}
+	res, text = call(t, cs, "create_load_balancer", map[string]any{"name": "web", "public_port": 80, "public_ip_id": "pip_1", "subnet_id": "snet_1"})
+	if res.IsError || !strings.Contains(text, "no extra charge") {
+		t.Fatalf("vpc_native preview:\n%s", text)
 	}
 }
 
