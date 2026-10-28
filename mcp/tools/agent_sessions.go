@@ -108,7 +108,7 @@ const sessionGetRoute = "GET /agent-sessions/{session_id}"
 func init() {
 	add(Spec{
 		Name: "get_instance_agent", Title: "Check an instance's Pantech agent",
-		Description: "Whether the instance's Pantech agent is enabled and connected, which a tools session needs. The user enables it in the console, on the instance's Agent tab; this server cannot.",
+		Description: "Whether the instance's Pantech agent is enabled and connected, which a tools session needs. If it is not set up, enable_instance_agent sets it up (the instance restarts once).",
 		Risk:        Read, Idempotent: true,
 		Routes: []string{"GET /instances/{instance_id}/agent"},
 	}, func(ctx context.Context, c *Call, in instanceAgentInput) (*Result, error) {
@@ -124,8 +124,10 @@ func init() {
 			return ok(fmt.Sprintf("Instance %s's agent is enabled and connected: start_tools_session can work there.", in.InstanceID), h)
 		case h.Enrolled:
 			return ok(fmt.Sprintf("Instance %s's agent is enabled but not connected right now: the instance may be stopped or still starting.", in.InstanceID), h)
+		case h.TokenPending:
+			return ok(fmt.Sprintf("Instance %s's agent is being set up and has not connected yet: it connects within a few minutes of the instance starting. Check again shortly.", in.InstanceID), h)
 		}
-		return ok(fmt.Sprintf("Instance %s's agent is not enabled. The user can enable it in the console, on the instance's Agent tab.", in.InstanceID), h)
+		return ok(fmt.Sprintf("Instance %s's agent is not enabled. enable_instance_agent sets it up (the instance restarts once, after the user confirms).", in.InstanceID), h)
 	})
 
 	add(Spec{
