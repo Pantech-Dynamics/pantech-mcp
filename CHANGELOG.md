@@ -3,6 +3,16 @@
 Releases are cut from this file: a new `## vX.Y.Z — YYYY-MM-DD` heading pushed to main is
 tagged and released (binaries on GitHub, the image on ghcr.io).
 
+## Unreleased
+
+### Added
+
+- `enable_instance_agent` ★ sets the Pantech agent up on a running instance with one restart, so
+  nobody runs commands in the VM. The preview says the instance restarts once; only an owner or
+  admin's connection can confirm it. `get_instance_agent` now says an agent is being set up while
+  its one-time token is unused, and points an instance without the agent at
+  `enable_instance_agent`.
+
 ## v0.3.0 — 2026-10-28
 
 ### Added
