@@ -13,6 +13,12 @@ tagged and released (binaries on GitHub, the image on ghcr.io).
   its one-time token is unused, and points an instance without the agent at
   `enable_instance_agent`.
 
+### Fixed
+
+- `create_load_balancer`'s preview prices an appliance load balancer: about what a month costs,
+  estimated from the same meters it is billed on (a 1 vCPU, 1 GB VM with a 25 GB disk and a
+  public IPv4). A `vpc_native` one says it costs nothing extra.
+
 ## v0.3.0 — 2026-10-28
 
 ### Added
