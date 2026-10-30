@@ -100,6 +100,10 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		reply(200, fmt.Sprintf(`{"id":%q,"status":%q,"kind":"test","resource_id":"res_1"}`, strings.TrimPrefix(path, "/operations/"), opStatus))
 	case r.Method == "GET" && (strings.HasPrefix(path, "/instance-orders/") || strings.HasPrefix(path, "/database-orders/")):
 		reply(200, `{"id":"ord_1","status":"provisioned","operation_id":"op_create","amount_minor":500000,"currency":"NGN"}`)
+	case r.Method == "GET" && path == "/kubernetes-clusters/k8s_1":
+		reply(200, `{"id":"k8s_1","name":"shop","subnet_id":null,"workers":1,"node_plan_id":"plan_2"}`)
+	case r.Method == "GET" && path == "/kubernetes-clusters/k8s_1/node-pools":
+		reply(200, `{"data":[{"id":"k8spool_1","cluster_id":"k8s_1","name":"db","node_plan_id":"plan_1","workers":1,"autoscaling_enabled":false,"min_workers":0,"max_workers":0,"labels":{},"taints":[],"status":"ready","observed_workers":1}],"next_cursor":null}`)
 	case r.Method == "GET" && path == "/plans":
 		reply(200, `{"data":[{"id":"plan_1","slug":"s-1","name":"Small","vcpu":1,"memory_mb":1024,"disk_gb":25,"price":{"currency":"NGN","monthly_estimate_minor":1250000,"initial_payment_minor":500000}},{"id":"plan_2","slug":"x1","name":"X","vcpu":2,"memory_mb":2048,"disk_gb":50,"price":{"currency":"NGN","monthly_estimate_minor":2500000}}],"next_cursor":null}`)
 	case r.Method == "POST" && path == "/pricing/estimate":
@@ -361,6 +365,39 @@ func TestEndToEndApplianceLoadBalancerPreviewIsPriced(t *testing.T) {
 	res, text = call(t, cs, "create_load_balancer", map[string]any{"name": "web", "public_port": 80, "public_ip_id": "pip_1", "subnet_id": "snet_1"})
 	if res.IsError || !strings.Contains(text, "no extra charge") {
 		t.Fatalf("vpc_native preview:\n%s", text)
+	}
+}
+
+// Kubernetes workers are billed hourly once they join: the scale preview
+// never says an initial payment is taken, and says instead what adding
+// workers needs (a saved card, or credit for each added worker).
+func TestEndToEndScaleNodePoolPreviewTakesNoInitialPayment(t *testing.T) {
+	api, srv := newFakeAPI(t)
+	cs := connect(t, srv.URL+apiPrefix, testKey, nil)
+	res, text := call(t, cs, "scale_node_pool", map[string]any{"cluster_id": "k8s_1", "pool_id": "k8spool_1", "workers": 3})
+	if res.IsError || strings.Contains(text, "initial payment") || !strings.Contains(text, "about NGN 12,500.00 a month, billed hourly once it joins") {
+		t.Fatalf("preview:\n%s", text)
+	}
+	if !strings.Contains(text, "Nothing is charged now. Adding 2 worker(s) needs a saved card, or at least NGN 10,000.00 of available credit.") {
+		t.Fatalf("preview does not say what adding workers needs:\n%s", text)
+	}
+	if n := len(api.calls("PATCH", "/kubernetes-clusters/k8s_1/node-pools/k8spool_1")); n != 0 {
+		t.Fatalf("the preview scaled the pool %d times", n)
+	}
+	res, text = call(t, cs, "scale_node_pool", map[string]any{"cluster_id": "k8s_1", "pool_id": "k8spool_1", "workers": 1})
+	if res.IsError || strings.Contains(text, "Nothing is charged now") {
+		t.Fatalf("a scale that adds no worker names funding:\n%s", text)
+	}
+}
+
+// A resize is billed hourly from the change with nothing up front, so its
+// preview never names the plan's initial payment either.
+func TestEndToEndResizePreviewTakesNoInitialPayment(t *testing.T) {
+	_, srv := newFakeAPI(t)
+	cs := connect(t, srv.URL+apiPrefix, testKey, nil)
+	res, text := call(t, cs, "resize_instance", map[string]any{"instance_id": "vm_1", "plan_slug": "x1"})
+	if res.IsError || strings.Contains(text, "initial payment") || !strings.Contains(text, "(no upfront charge)") {
+		t.Fatalf("preview:\n%s", text)
 	}
 }
 
