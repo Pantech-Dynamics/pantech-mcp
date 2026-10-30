@@ -22,19 +22,37 @@ func (c *Call) findPlan(ctx context.Context, slug, placement string) (*pantech.P
 	return nil, errorf("There is no plan %s. Call list_plans for the plan slugs.", arg(slug))
 }
 
-// planPrice describes a plan's price, or says why it has none.
+// planPrice describes a plan's price for a new order, initial payment
+// included, or says why it has none.
 func planPrice(p *pantech.Plan) string {
+	s := planMonthlyPrice(p)
+	if p.Price != nil && p.Price.InitialPaymentMinor > 0 {
+		s += fmt.Sprintf(", with an initial payment of %s taken from credit (or the saved card) now", money(p.Price.InitialPaymentMinor, p.Price.Currency))
+	}
+	return s
+}
+
+// planMonthlyPrice is a plan's monthly price alone, for what is billed
+// hourly with nothing taken up front (a resize, a Kubernetes worker), or
+// says why it has none.
+func planMonthlyPrice(p *pantech.Plan) string {
 	if p.Price == nil {
 		if p.UnpricedReason != nil {
 			return "not priced (" + *p.UnpricedReason + ")"
 		}
 		return "not priced"
 	}
-	s := fmt.Sprintf("about %s a month", money(p.Price.MonthlyEstimateMinor, p.Price.Currency))
-	if p.Price.InitialPaymentMinor > 0 {
-		s += fmt.Sprintf(", with an initial payment of %s taken from credit (or the saved card) now", money(p.Price.InitialPaymentMinor, p.Price.Currency))
+	return fmt.Sprintf("about %s a month", money(p.Price.MonthlyEstimateMinor, p.Price.Currency))
+}
+
+// workersFunding is what adding workers needs, though nothing is taken: a
+// saved card, or credit for each added worker's initial payment.
+func workersFunding(p *pantech.Plan, added int) string {
+	if p.Price == nil || p.Price.InitialPaymentMinor <= 0 || added <= 0 {
+		return ""
 	}
-	return s
+	return fmt.Sprintf("Nothing is charged now. Adding %d worker(s) needs a saved card, or at least %s of available credit.",
+		added, money(p.Price.InitialPaymentMinor*int64(added), p.Price.Currency))
 }
 
 func placementOf(subnetID, networkID string) string {

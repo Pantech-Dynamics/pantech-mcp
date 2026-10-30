@@ -136,7 +136,10 @@ func init() {
 			}
 			p.Price = "each worker is billed as an instance of the pool's plan"
 			if plan := c.planByID(ctx, pool.NodePlanID, placementOf(str(cl.SubnetID), "")); plan != nil {
-				p.Price = fmt.Sprintf("%s at %d workers (each %s)", c.nodesPrice(ctx, plan.Slug, placementOf(str(cl.SubnetID), ""), *in.Workers), *in.Workers, planPrice(plan))
+				p.Price = fmt.Sprintf("%s at %d workers (each %s, billed hourly once it joins)", c.nodesPrice(ctx, plan.Slug, placementOf(str(cl.SubnetID), ""), *in.Workers), *in.Workers, planMonthlyPrice(plan))
+				if note := workersFunding(plan, in.addedWorkers(pool)); note != "" {
+					p.Warnings = append(p.Warnings, note)
+				}
 			}
 		} else {
 			p.Action = fmt.Sprintf("Change the autoscaling of node pool %s of cluster %s.", pool.ID, cl.ID)
@@ -174,6 +177,23 @@ func (in createClusterInput) request() pantech.CreateKubernetesClusterRequest {
 
 func (in scaleNodePoolInput) request() pantech.ScaleKubernetesNodePoolRequest {
 	return pantech.ScaleKubernetesNodePoolRequest{Workers: in.Workers, AutoscalingEnabled: in.AutoscalingEnabled, MinWorkers: in.MinWorkers, MaxWorkers: in.MaxWorkers}
+}
+
+// addedWorkers is how many more workers the change may run, as the
+// platform's funding check counts them: an autoscaled pool at its maximum.
+func (in scaleNodePoolInput) addedWorkers(pool *pantech.KubernetesNodePool) int {
+	current := pool.Workers
+	if pool.AutoscalingEnabled {
+		current = pool.MaxWorkers
+	}
+	wanted := current
+	if in.Workers != nil {
+		wanted = *in.Workers
+	}
+	if in.AutoscalingEnabled != nil && *in.AutoscalingEnabled && in.MaxWorkers != nil {
+		wanted = *in.MaxWorkers
+	}
+	return wanted - current
 }
 
 // nodesPrice estimates n nodes of a plan for a month.

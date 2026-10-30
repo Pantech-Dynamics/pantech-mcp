@@ -18,6 +18,10 @@ tagged and released (binaries on GitHub, the image on ghcr.io).
 - `create_load_balancer`'s preview prices an appliance load balancer: about what a month costs,
   estimated from the same meters it is billed on (a 1 vCPU, 1 GB VM with a 25 GB disk and a
   public IPv4). A `vpc_native` one says it costs nothing extra.
+- `scale_node_pool`'s preview no longer says an initial payment is taken for each worker: workers
+  are billed hourly once they join, and nothing is charged up front. When the scale adds workers,
+  it says what that needs instead: a saved card, or available credit for the added workers.
+  `resize_instance`'s preview no longer names the current plan's initial payment either.
 
 ## v0.3.0 — 2026-10-28
 

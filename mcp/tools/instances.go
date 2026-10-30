@@ -181,13 +181,13 @@ func init() {
 		p := &Preview{
 			Action: fmt.Sprintf("Resize instance %s from plan %s to %s (%d vCPU, %d MB memory, %d GB disk). It is stopped, resized and started again, so it is offline for a few minutes.",
 				vm.ID, str(vm.PlanSlug), plan.Slug, plan.VCPU, plan.MemoryMB, plan.DiskGB),
-			Price:    "new plan " + planPrice(plan) + ", billed hourly from the change (no upfront charge)",
+			Price:    "new plan " + planMonthlyPrice(plan) + ", billed hourly from the change (no upfront charge)",
 			Warnings: []string{"Instances only grow: this cannot be undone by resizing down."},
 			Data:     map[string]any{"instance": vm, "new_plan": plan},
 		}
 		if vm.PlanSlug != nil {
 			if cur, err := c.findPlan(ctx, *vm.PlanSlug, placement); err == nil {
-				p.Price += "; current plan " + planPrice(cur)
+				p.Price += "; current plan " + planMonthlyPrice(cur)
 			}
 		}
 		return p, nil
