@@ -7,6 +7,11 @@ tagged and released (binaries on GitHub, the image on ghcr.io).
 
 ### Added
 
+- `resize_kubernetes_node_plan` ★ moves a cluster's control node and default workers to another
+  plan, one node at a time. The preview prices the nodes on the new plan against the current one,
+  says each node restarts, and refuses a plan with a smaller disk.
+- `list_kubernetes_versions` lists the versions a cluster can be created with, so
+  `create_kubernetes_cluster` can be given a real `kubernetes_version_id`.
 - `enable_instance_agent` ★ sets the Pantech agent up on a running instance with one restart, so
   nobody runs commands in the VM. The preview says the instance restarts once; only an owner or
   admin's connection can confirm it. `get_instance_agent` now says an agent is being set up while
