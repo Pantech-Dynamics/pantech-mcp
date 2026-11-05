@@ -13,7 +13,7 @@ type listKubernetesVersionsInput struct {
 
 type resizeNodePlanInput struct {
 	ClusterID string `json:"cluster_id" jsonschema:"The Kubernetes cluster's id."`
-	NodePlan  string `json:"node_plan" jsonschema:"The plan slug the cluster's control and default worker nodes move to, from list_plans. Its disk must not be smaller than the current plan's."`
+	NodePlan  string `json:"node_plan" jsonschema:"The plan slug the cluster's control and default worker nodes move to, from list_plans. A smaller plan works too: the nodes keep the disk they have, since a disk only grows."`
 	Confirmation
 }
 
@@ -61,11 +61,13 @@ func init() {
 			},
 			Data: map[string]any{"cluster": cl, "new_plan": plan},
 		}
+		disk := cl.Node.DiskGB // the nodes' disk, which can be bigger than their plan's
 		if cur := c.planByID(ctx, cl.NodePlanID, placement); cur != nil {
 			p.Price += fmt.Sprintf("; now %s", c.nodesPrice(ctx, cur.Slug, placement, nodes))
-			if plan.DiskGB < cur.DiskGB {
-				return nil, errorf("Plan %s has a %d GB disk, smaller than the %d GB the nodes have now; node disks cannot shrink.", plan.Slug, plan.DiskGB, cur.DiskGB)
-			}
+			disk = max(disk, cur.DiskGB)
+		}
+		if plan.DiskGB < disk {
+			p.Warnings = append(p.Warnings, fmt.Sprintf("Plan %s has a %d GB disk and the nodes have %d GB: they take its vCPU and memory and keep their %d GB disk.", plan.Slug, plan.DiskGB, disk, disk))
 		}
 		return p, nil
 	}, func(ctx context.Context, c *Call, in resizeNodePlanInput) (*Result, error) {
