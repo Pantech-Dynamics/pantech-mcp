@@ -43,6 +43,9 @@ var wantRisk = map[string]Risk{
 	"toggle_kubernetes_addon": Destructive, "list_cluster_nodes": Read, "list_cluster_workloads": Read,
 	"delete_ssh_key": Destructive, "list_webhook_deliveries": Read,
 
+	// Kubernetes node plan resize.
+	"list_kubernetes_versions": Read, "resize_kubernetes_node_plan": Cost,
+
 	// Tools sessions: every step runs as the session's unprivileged user and,
 	// in an ask session, waits for a person's approval in the console outside
 	// a safe list, so the steps are plain writes here.

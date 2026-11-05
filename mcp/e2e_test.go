@@ -101,7 +101,7 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.Method == "GET" && (strings.HasPrefix(path, "/instance-orders/") || strings.HasPrefix(path, "/database-orders/")):
 		reply(200, `{"id":"ord_1","status":"provisioned","operation_id":"op_create","amount_minor":500000,"currency":"NGN"}`)
 	case r.Method == "GET" && path == "/kubernetes-clusters/k8s_1":
-		reply(200, `{"id":"k8s_1","name":"shop","subnet_id":null,"workers":1,"node_plan_id":"plan_2"}`)
+		reply(200, `{"id":"k8s_1","name":"shop","subnet_id":null,"control_nodes":1,"workers":1,"node_plan_id":"plan_2"}`)
 	case r.Method == "GET" && path == "/kubernetes-clusters/k8s_1/node-pools":
 		reply(200, `{"data":[{"id":"k8spool_1","cluster_id":"k8s_1","name":"db","node_plan_id":"plan_1","workers":1,"autoscaling_enabled":false,"min_workers":0,"max_workers":0,"labels":{},"taints":[],"status":"ready","observed_workers":1}],"next_cursor":null}`)
 	case r.Method == "GET" && path == "/plans":
@@ -398,6 +398,35 @@ func TestEndToEndResizePreviewTakesNoInitialPayment(t *testing.T) {
 	res, text := call(t, cs, "resize_instance", map[string]any{"instance_id": "vm_1", "plan_slug": "x1"})
 	if res.IsError || strings.Contains(text, "initial payment") || !strings.Contains(text, "(no upfront charge)") {
 		t.Fatalf("preview:\n%s", text)
+	}
+}
+
+// A node plan change previews the cluster's nodes on the new plan and is
+// sent only with the token. A plan with a smaller disk is refused at the
+// preview, since node disks cannot shrink.
+func TestEndToEndResizeKubernetesNodePlanTwoStep(t *testing.T) {
+	api, srv := newFakeAPI(t)
+	cs := connect(t, srv.URL+apiPrefix, testKey, nil)
+	if res, text := call(t, cs, "resize_kubernetes_node_plan", map[string]any{"cluster_id": "k8s_1", "node_plan": "s-1"}); !res.IsError || !strings.Contains(text, "cannot shrink") {
+		t.Fatalf("smaller disk: %v\n%s", res.IsError, text)
+	}
+	args := map[string]any{"cluster_id": "k8s_1", "node_plan": "x1"}
+	res, text := call(t, cs, "resize_kubernetes_node_plan", args)
+	if res.IsError || !strings.Contains(text, "PREVIEW") || !strings.Contains(text, "Resize the 2 nodes of cluster k8s_1 to plan x1") ||
+		!strings.Contains(text, "about NGN 13,123.45 a month for 2 nodes once every node runs the new plan") {
+		t.Fatalf("preview:\n%s", text)
+	}
+	if n := len(api.calls("POST", "/kubernetes-clusters/k8s_1/resize-plan")); n != 0 {
+		t.Fatalf("the preview resized the cluster %d times", n)
+	}
+	token, _ := structured(t, res)["data"].(map[string]any)["confirmation_token"].(string)
+	args["confirmation_token"] = token
+	if res, text := call(t, cs, "resize_kubernetes_node_plan", args); res.IsError {
+		t.Fatalf("confirmed: %s", text)
+	}
+	posts := api.calls("POST", "/kubernetes-clusters/k8s_1/resize-plan")
+	if len(posts) != 1 || posts[0].Body != `{"node_plan":"x1"}` || posts[0].IdempotencyKey == "" {
+		t.Fatalf("resize-plan requests = %+v", posts)
 	}
 }
 
