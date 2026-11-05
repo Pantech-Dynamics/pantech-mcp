@@ -402,12 +402,12 @@ func TestEndToEndResizePreviewTakesNoInitialPayment(t *testing.T) {
 }
 
 // A node plan change previews the cluster's nodes on the new plan and is
-// sent only with the token. A plan with a smaller disk is refused at the
-// preview, since node disks cannot shrink.
+// sent only with the token. A plan with a smaller disk is a resize down:
+// the preview says the nodes keep the disk they have.
 func TestEndToEndResizeKubernetesNodePlanTwoStep(t *testing.T) {
 	api, srv := newFakeAPI(t)
 	cs := connect(t, srv.URL+apiPrefix, testKey, nil)
-	if res, text := call(t, cs, "resize_kubernetes_node_plan", map[string]any{"cluster_id": "k8s_1", "node_plan": "s-1"}); !res.IsError || !strings.Contains(text, "cannot shrink") {
+	if res, text := call(t, cs, "resize_kubernetes_node_plan", map[string]any{"cluster_id": "k8s_1", "node_plan": "s-1"}); res.IsError || !strings.Contains(text, "PREVIEW") || !strings.Contains(text, "keep their") {
 		t.Fatalf("smaller disk: %v\n%s", res.IsError, text)
 	}
 	args := map[string]any{"cluster_id": "k8s_1", "node_plan": "x1"}
