@@ -22,7 +22,7 @@ import (
 
 // Version is the server's version, set at build time with
 // -ldflags "-X github.com/Pantech-Dynamics/pantech-mcp/mcp.Version=…".
-var Version = "0.3.0"
+var Version = "0.4.0"
 
 // DefaultAPIURL is the production public API.
 const DefaultAPIURL = "https://api.pantechdynamics.com/public/v1"

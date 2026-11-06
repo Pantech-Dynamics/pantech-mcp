@@ -3,7 +3,7 @@
 Releases are cut from this file: a new `## vX.Y.Z — YYYY-MM-DD` heading pushed to main is
 tagged and released (binaries on GitHub, the image on ghcr.io).
 
-## Unreleased
+## v0.4.0 — 2026-11-06
 
 ### Added
 
