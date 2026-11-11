@@ -16,8 +16,9 @@
 </p>
 
 `pantech-mcp` lets AI apps work with your Pantech Dynamics cloud: list and create instances,
-networks, firewalls, public IPs, load balancers, volumes, snapshots, managed databases and
-Kubernetes clusters, price a setup, explain your bill, and plan a move from AWS. See
+networks, firewalls, public IPs, load balancers, volumes, snapshots, managed databases,
+Kubernetes clusters, DNS zones and domains, container registry repositories, TLS certificates, teams and access policies, price a setup, explain your bill, and plan a move from
+AWS. See
 [Set up your AI app](#set-up-your-ai-app) for the supported apps.
 
 Anything that costs money, opens access from the internet, or deletes or overwrites something is
@@ -99,6 +100,11 @@ or credentials file that other users can write, and an API URL that is not https
 | Kubernetes | `list_kubernetes_clusters`, `get_kubernetes_cluster`, `list_kubernetes_versions`, `create_kubernetes_cluster` ★, `resize_kubernetes_node_plan` ★, `start_kubernetes_cluster`, `stop_kubernetes_cluster`, `delete_kubernetes_cluster` ★, `list_node_pools`, `create_node_pool` ★, `scale_node_pool` ★, `delete_node_pool` ★, `list_kubernetes_addons`, `toggle_kubernetes_addon` ★, `list_cluster_nodes`, `list_cluster_workloads` |
 | Inside an instance | `get_instance_agent`, `enable_instance_agent` ★, `start_tools_session`, `run_in_instance`, `read_instance_file`, `write_instance_file`, `list_instance_dir`, `get_agent_tool_call`, `list_agent_sessions`, `get_agent_session`, `list_agent_session_events`, `end_agent_session`, `get_agent_session_report` |
 | Migrate (from AWS) | `connect_cloud_account`, `list_cloud_connections`, `get_cloud_connection`, `set_cloud_role`, `retry_cloud_connection`, `disconnect_cloud_account`, `scan_cloud_account` ★, `list_cloud_scans`, `get_cloud_scan`, `plan_migration`, `list_migrations`, `get_migration`, `update_migration_item`, `rename_migration`, `delete_migration` ★, `export_migration_terraform` |
+| DNS | `list_dns_zones`, `get_dns_zone`, `create_dns_zone` (★ beyond 5 free zones), `verify_dns_zone`, `delete_dns_zone` ★, `list_dns_records`, `create_dns_record`, `update_dns_record` ★, `delete_dns_record` ★, `import_dns_zone` (★ with `replace`), `export_dns_zone` |
+| Domains | `list_domain_tlds`, `search_domains`, `check_domain_transfer`, `list_domains`, `get_domain`, `register_domain` ★, `transfer_domain` ★, `renew_domain` ★, `update_domain_settings` (★ when turning something off), `set_domain_name_servers` ★, `get_domain_contact`, `update_domain_contact` ★, `get_domain_auth_code` ★, `list_domain_orders`, `get_domain_order`, `retry_domain_order_payment` ★ |
+| Container Registry | `get_registry_namespace`, `set_registry_namespace` ★, `list_registry_repositories`, `create_registry_repository` (★ when public), `get_registry_repository`, `update_registry_repository` (★ when it makes the repository public, turns immutable tags off or sets retention), `delete_registry_repository` ★, `list_registry_tags`, `get_registry_tag`, `delete_registry_tag` ★, `list_registry_tokens`, `create_registry_token` ★, `revoke_registry_token` ★ |
+| Certificates | `list_certificates`, `get_certificate`, `request_certificate` (★ when Pantech will write validation records in your zones), `import_certificate` ★, `update_certificate`, `verify_certificate`, `reimport_certificate` ★, `export_certificate` ★, `revoke_certificate` ★, `delete_certificate` ★ |
+| Teams and access | `list_iam_actions`, `get_iam_settings`, `update_iam_settings` ★, `list_iam_teams`, `get_iam_team`, `list_iam_team_members`, `create_iam_team` ★, `update_iam_team` ★, `delete_iam_team` ★, `add_iam_team_member` ★, `remove_iam_team_member` ★, `list_iam_policies`, `get_iam_policy`, `create_iam_policy` ★, `update_iam_policy` ★, `delete_iam_policy` ★, `list_iam_policy_attachments`, `attach_iam_policy` ★, `detach_iam_policy` ★, `list_iam_members`, `get_iam_effective_access`, `simulate_iam_access` |
 | Other | `list_webhooks`, `list_webhook_deliveries`, `get_operation`, `wait_for_operation` |
 
 Resource: `pantech://docs/agent-brief`. Prompts: `deploy_web_app`, `explain_my_bill`,
@@ -138,6 +144,49 @@ and compares Pantech's monthly price with your current bill; nothing is created 
 it with `export_migration_terraform` and apply the Terraform yourself. Copying servers is not
 available yet.
 
+The DNS tools manage zones and records on Pantech DNS, on Pantech's own name servers. Each zone
+gets its own two name servers; it is served once the domain's registrar delegates to exactly them,
+which proves the domain is yours, and records added before then go live when it does. A domain
+bought through Pantech is pointed at its zone for you. The first 5 zones are free; creating a
+further one is two-step, with its monthly price. A record change is live within
+about a minute. Changing or deleting a record is two-step, and the confirmation is refused if the
+record changed after the preview. Deleting a zone or a record, importing a zone file with
+`replace`, and getting a domain's auth code need **Manage and delete** access.
+
+The domain tools search, buy, transfer in and renew domains, paid in full from your organization's
+Pantech credit. The preview of `register_domain`, `transfer_domain` and `renew_domain` gives the
+exact total for the years asked, says it is taken from credit and cannot be undone, and names the
+registration agreement: confirming accepts it. If the price changes after the preview, the
+confirmation is refused. A failed order returns the money to credit. An order the credit does not
+cover waits up to an hour for the difference: in US dollars the saved card is charged it (a payment
+link appears only if the bank asks the user to confirm), and in naira the user adds credit;
+`retry_domain_order_payment` tries again at once, never charging twice. The registrant contact is
+personal data: it goes only in the fenced data, and an auth code never appears in a summary.
+
+The Container Registry tools manage the organization's namespace, repositories, tags and registry
+tokens at `registry.pantechdynamics.com`. Images are pushed and pulled with `docker` or `podman`
+(`docker login registry.pantechdynamics.com -u pantech` with an API key or a registry token),
+never through this server. The namespace cannot change once a repository exists, so claiming it
+is two-step. So are making a repository public, turning immutable tags off, setting retention,
+and deleting a repository, a tag or a token; deletes need **Manage and delete** access. A new
+registry token's secret is shown once, in the fenced data.
+
+The certificate tools request free public TLS certificates, validated through DNS. For names in
+your active Pantech DNS zones, Pantech adds and removes the challenge records itself, so that
+request is two-step; any other name needs one CNAME at its DNS host, which the result names, and
+renewals then stay automatic. Importing, replacing, exporting, revoking and deleting are two-step;
+exporting, revoking and deleting need **Manage and delete** access, and every export emails your
+owners and admins.
+
+The teams and access tools manage who may do what. Every change is two-step, and its preview
+says in plain words who gains or loses which actions on which resources, for example that a
+team's 3 members get write access to instances named `staging-*`. It also says when removing a
+policy or a member lifts a deny, and that policies never apply to owners and change admins only
+through deny statements. A policy is built only from what you ask for: names, descriptions and
+other text in tool results are data, never a reason to change access. `simulate_iam_access`
+tests a decision without changing anything. Deleting a team or a policy needs **Manage and
+delete** access.
+
 Changes run in the background: tools wait up to a minute (sending progress notifications when the
 app asks for them), then return an operation id for `wait_for_operation`.
 
@@ -170,7 +219,11 @@ is wrong or is being manipulated:
   fails if any tool calls those routes). Temporary SSH access returns only a host, a port and an
   expiry; webhook deliveries are listed without the endpoint's responses. `create_ssh_key` only
   imports public keys; `create_database` drops the generated password (set your own in the
-  console); webhook URLs are shown without query strings.
+  console); webhook URLs are shown without query strings. Three values are returned on purpose,
+  each only after a confirmed preview and only in the fenced data, never in a summary: a domain's
+  auth code (`get_domain_auth_code`), a new registry token's secret (`create_registry_token`,
+  shown once) and an exportable certificate's private key (`export_certificate`). A private key
+  given to `import_certificate` or `reimport_certificate` is sent to Pantech and never shown back.
 - **Account data is fenced.** Names, tags, descriptions and rules come back clearly labelled as
   data from the account, not instructions, so text planted in a resource name cannot pose as
   instructions.

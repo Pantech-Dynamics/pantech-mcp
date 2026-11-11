@@ -57,6 +57,10 @@ type Spec struct {
 	// {placeholders}. TestNoExcludedRoutes checks them, and the end-to-end
 	// test checks that every route a tool calls is listed.
 	Routes []string
+	// ConfirmWhen, for a two-step tool that confirms only some calls, says
+	// which ones in the description's words ("when replace is true"); the
+	// others run in one step. Register such a tool with addConfirmedWith.
+	ConfirmWhen string
 }
 
 // Tool is a registered tool: its spec and how to install it on a server.
@@ -158,6 +162,9 @@ type Call struct {
 	tool   string
 	// idemKey is set on the confirmed step of a two-step tool.
 	idemKey string
+	// bound is the live state a confirmed call's token was checked
+	// against (see confirmOptions.bind), for execute to use.
+	bound string
 }
 
 // writeOpts are the request options a write sends: the Idempotency-Key
@@ -216,6 +223,9 @@ type Preview struct {
 	// Data is the account data the preview is based on (current state,
 	// the request), shown fenced as untrusted.
 	Data any
+	// bound is the live state the token is bound to, for a tool registered
+	// with confirmOptions.bind: the preview sets it from the same function.
+	bound string
 }
 
 func annotations(s Spec) *sdk.ToolAnnotations {
@@ -237,7 +247,10 @@ const twoStepNote = "\n\nTwo steps: the first call changes nothing and returns a
 
 func describe(s Spec) string {
 	d := s.Description
-	if s.Risk.NeedsConfirmation() {
+	switch {
+	case s.Risk.NeedsConfirmation() && s.ConfirmWhen != "":
+		d += "\n\nTwo steps " + s.ConfirmWhen + ": the first call changes nothing and returns a preview and a confirmation_token. Show the preview to the user; only after they agree, call again with exactly the same arguments plus confirmation_token. Other calls run in one step."
+	case s.Risk.NeedsConfirmation():
 		d += twoStepNote
 	}
 	return d
@@ -274,8 +287,36 @@ func addConfirmed[In confirmable](spec Spec,
 	preview func(ctx context.Context, c *Call, in In) (*Preview, error),
 	execute func(ctx context.Context, c *Call, in In) (*Result, error),
 ) {
+	addConfirmedWith(spec, confirmOptions[In]{}, preview, execute)
+}
+
+// confirmOptions refine a two-step tool.
+type confirmOptions[In any] struct {
+	// when, if set, reports whether this call needs confirmation; a call it
+	// returns false for runs execute in one step. Spec.ConfirmWhen must say
+	// the same in words.
+	when func(in In) bool
+	// whenLive is when for a decision that needs the account's state (for
+	// example, whether a name is in one of its DNS zones).
+	whenLive func(ctx context.Context, c *Call, in In) (bool, error)
+	// bind, if set, reads live state the token is bound to besides the
+	// arguments: a quoted price, a record's version. The preview sets
+	// Preview.bound from the same function, and the confirmed call reads it
+	// again, so a confirmation is refused when that state changed after the
+	// user saw the preview. execute finds the value in Call.bound.
+	bind func(ctx context.Context, c *Call, in In) (string, error)
+}
+
+// addConfirmedWith is addConfirmed with options.
+func addConfirmedWith[In confirmable](spec Spec, opts confirmOptions[In],
+	preview func(ctx context.Context, c *Call, in In) (*Preview, error),
+	execute func(ctx context.Context, c *Call, in In) (*Result, error),
+) {
 	if !spec.Risk.NeedsConfirmation() {
 		panic("tools: " + spec.Name + " does not need confirmation: register it with add")
+	}
+	if (opts.when != nil || opts.whenLive != nil) != (spec.ConfirmWhen != "") {
+		panic("tools: " + spec.Name + ": ConfirmWhen and confirmOptions.when go together")
 	}
 	registry = append(registry, Tool{Spec: spec, install: func(s *sdk.Server, env *Env) {
 		sdk.AddTool(s, &sdk.Tool{Name: spec.Name, Title: spec.Title, Description: describe(spec), Annotations: annotations(spec)},
@@ -286,24 +327,45 @@ func addConfirmed[In confirmable](spec Spec,
 				if err != nil {
 					return toolError(ctx, err).render()
 				}
+				rec := record(ctx)
+				needs := true
+				switch {
+				case opts.when != nil:
+					needs = opts.when(in)
+				case opts.whenLive != nil:
+					if needs, err = opts.whenLive(ctx, c, in); err != nil {
+						return toolError(ctx, err).render()
+					}
+				}
+				if !needs {
+					res, err := execute(ctx, c, in)
+					if err != nil {
+						return toolError(ctx, err).render()
+					}
+					return res.render()
+				}
 				args, err := CanonicalArgs(in)
 				if err != nil {
 					return toolError(ctx, err).render()
 				}
 				token := in.token()
-				rec := record(ctx)
 				if token == "" {
 					rec.Phase = "preview"
 					p, err := preview(ctx, c, in)
 					if err != nil {
 						return toolError(ctx, err).render()
 					}
-					tok, exp := env.Confirm.Issue(spec.Name, args, subject)
+					tok, exp := env.Confirm.Issue(spec.Name, boundArgs(args, p.bound), subject)
 					return previewResult(spec, p, tok, exp).render()
 				}
-				if err := env.Confirm.Verify(token, spec.Name, args, subject); err != nil {
+				if opts.bind != nil {
+					if c.bound, err = opts.bind(ctx, c, in); err != nil {
+						return toolError(ctx, err).render()
+					}
+				}
+				if err := env.Confirm.Verify(token, spec.Name, boundArgs(args, c.bound), subject); err != nil {
 					rec.Phase = "refused"
-					return refusedResult(spec).render()
+					return refusedResult(spec, opts.bind != nil).render()
 				}
 				rec.Phase = "confirmed"
 				c.idemKey = env.Confirm.IdempotencyKey(token)
@@ -314,6 +376,17 @@ func addConfirmed[In confirmable](spec Spec,
 				return res.render()
 			})
 	}})
+}
+
+// boundArgs adds the live state a token is bound to after the canonical
+// arguments. A NUL cannot appear in JSON, so the two never run together.
+func boundArgs(args []byte, bound string) []byte {
+	if bound == "" {
+		return args
+	}
+	out := slices.Clone(args)
+	out = append(out, 0)
+	return append(out, bound...)
 }
 
 func newCall(ctx context.Context, env *Env, tool string, req *sdk.CallToolRequest) (*Call, string, error) {
@@ -368,11 +441,15 @@ func previewResult(spec Spec, p *Preview, token string, exp time.Time) *Result {
 	}
 }
 
-func refusedResult(spec Spec) *Result {
+func refusedResult(spec Spec, bound bool) *Result {
+	why := "or the arguments differ from the preview's"
+	if bound {
+		why = "the arguments differ from the preview's, or what the preview showed (the price, or the record) has changed since"
+	}
 	return &Result{
 		IsError: true,
 		Text: fmt.Sprintf("Nothing was done: that confirmation_token is not valid for this request. It may have expired (tokens last 5 minutes), "+
-			"or the arguments differ from the preview's. Call %s again without confirmation_token to get a new preview, and confirm it with the user.", spec.Name),
+			"%s. Call %s again without confirmation_token to get a new preview, and confirm it with the user.", why, spec.Name),
 		Data: map[string]any{"status": "confirmation_invalid"},
 	}
 }
