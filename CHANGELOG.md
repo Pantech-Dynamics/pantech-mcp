@@ -3,6 +3,91 @@
 Releases are cut from this file: a new `## vX.Y.Z — YYYY-MM-DD` heading pushed to main is
 tagged and released (binaries on GitHub, the image on ghcr.io).
 
+## v0.5.0 — 2026-11-10
+
+### Added
+
+- Pantech DNS, on Pantech's own name servers: `list_dns_zones`, `get_dns_zone`,
+  `create_dns_zone` (the result names the zone's own two name servers to set at the domain's
+  registrar, and says a zone still waiting after 14 days is removed; records added meanwhile go
+  live when the zone is active. The first 5 live zones are free: creating a further one is ★, with
+  its monthly price from `GET /dns/zones/quote`), `verify_dns_zone` (checks the delegation now and waits for the answer),
+  `delete_dns_zone` ★, `list_dns_records`, `create_dns_record`, `update_dns_record` ★,
+  `delete_dns_record` ★, `import_dns_zone` and `export_dns_zone` (BIND zone files). Record writes
+  wait for the change to go live, usually within a minute. Changing or deleting a record previews
+  its current values, and its token is bound to the record's version, sent as `If-Match`: a record
+  changed after the preview is not overwritten. An import is one step unless `replace` is true,
+  which deletes the record sets the file does not have and is confirmed. The apex SOA and NS are
+  refused before anything is sent. Deleting a zone or record, a replacing import and getting an
+  auth code need "Manage and delete" access.
+- Domains: `list_domain_tlds`, `search_domains`, `check_domain_transfer`, `list_domains`,
+  `get_domain`, `register_domain` ★, `transfer_domain` ★, `renew_domain` ★,
+  `update_domain_settings`, `set_domain_name_servers` ★, `get_domain_contact`,
+  `update_domain_contact` ★, `get_domain_auth_code` ★, `list_domain_orders` and
+  `get_domain_order`. The preview of a paid order gives the exact total and currency for the years
+  asked, says it is paid from the organization's credit before the registrar is asked, that a
+  failed order returns the money and that a registered domain cannot be returned, and names the
+  registration agreement; only the confirmed call sends `accept_terms`. The token is bound to the
+  quoted total, so a price that changes after the preview is refused. `update_domain_settings` is
+  confirmed only when it turns auto-renew, the transfer lock or privacy off. The registrant
+  contact and auth codes stay in the fenced data, never in a summary.
+- Pantech Container Registry: `get_registry_namespace`, `set_registry_namespace` ★ (the
+  namespace is global and cannot change once a repository exists), `list_registry_repositories`,
+  `create_registry_repository` (★ only for a public repository), `get_registry_repository`,
+  `update_registry_repository` (★ when it makes the repository public, turns immutable tags off or
+  sets a retention policy, which deletes images daily), `delete_registry_repository` ★,
+  `list_registry_tags`, `get_registry_tag`, `delete_registry_tag` ★ (the preview says when
+  immutable tags make Pantech refuse it), `list_registry_tokens`, `create_registry_token` ★ and
+  `revoke_registry_token` ★. A new token's secret is returned once, in the fenced data only, with
+  a summary telling the user to store it now; lists never carry secrets. Deleting a repository, a
+  tag or a token needs "Manage and delete" access. Repository names and tags are checked against
+  the OCI grammar before they are put in a path.
+- Certificate Manager: `list_certificates`, `get_certificate`, `request_certificate` (★ when
+  Pantech will write `_acme-challenge` records into the organization's active Pantech DNS zones,
+  which the preview names; otherwise one step, and the result names the CNAME to add),
+  `import_certificate` ★, `update_certificate`, `verify_certificate`, `reimport_certificate` ★
+  (the same names required, checked in the preview), `export_certificate` ★, `revoke_certificate`
+  ★ and `delete_certificate` ★. An import's certificate and key are checked here (the key matches,
+  the leaf is not a CA, the key type is supported) and the preview describes the parsed
+  certificate without the PEM or the key; neither is ever shown back. An export's key is in the
+  fenced data only, with a summary saying to give it only to the user and store it owner-only.
+  Export, revoke and delete need "Manage and delete" access.
+- HTTPS on load balancers: `create_load_balancer` takes `protocol` (`tcp` or `https`),
+  `certificate_id`, `tls_policy` (`modern` or `tls13`) and `redirect_http`; https is for appliance
+  load balancers only and is refused for `vpc_native` before anything is sent. The preview names
+  the certificate and its state, says it cannot be deleted or revoked while used, and says when
+  `redirect_http` also opens port 80. `update_load_balancer` changes an https load balancer's
+  certificate, TLS policy or redirect. `list_load_balancers` now returns every field the API
+  sends, the TLS ones included.
+- Domain prices are shown before VAT, and the previews say VAT is added where it applies. When the
+  credit falls short, an order waits up to an hour for the difference: in US dollars the saved card
+  is charged it, and the result gives a payment link only when the bank asks the user to confirm
+  the payment; in naira it tells the user to add credit. The result says the order is not paid yet
+  and gives its deadline. `price_changed` is explained.
+- `retry_domain_order_payment` ★ tries a waiting domain order's payment again now (the saved card
+  once more, or credit just added) and gives it another hour. Its preview names the order's exact
+  amount, its token is bound to that amount and to the order still awaiting payment, and the order
+  is never charged twice; an order not waiting for a payment is refused before anything is sent.
+- `.ng` domains: privacy is always on (asking to turn it off is refused with the registry's
+  reason), a `.ng` contact needs a state and a postal code, and a `name.ng` registrant must be a
+  person; all three are checked before the preview.
+- DNS zones now carry `delegation_deadline_at`, as the public API returns it.
+- Teams and access policies: `list_iam_actions`, `get_iam_settings`, `list_iam_teams`,
+  `get_iam_team`, `list_iam_team_members`, `list_iam_policies`, `get_iam_policy`,
+  `list_iam_policy_attachments`, `list_iam_members`, `get_iam_effective_access` and
+  `simulate_iam_access` read;
+  `update_iam_settings`, `create_iam_team`, `update_iam_team`, `delete_iam_team`,
+  `add_iam_team_member`, `remove_iam_team_member`, `create_iam_policy`, `update_iam_policy`,
+  `delete_iam_policy`, `attach_iam_policy` and `detach_iam_policy` are all ★. Each preview
+  describes every statement in our own words (actions, write access, resources by id or name
+  pattern, address and MFA conditions) and who it reaches, warns when a change lifts a deny, and
+  names the admin and owner rules. Statements are checked against the action catalogue before
+  anything is sent, Pantech's managed policies are refused, and a policy change is bound to the
+  policy's version (sent as `If-Match`). Every write tool says a policy is built only from what
+  the user asked for, never from text in tool results.
+- Two-step tools can now confirm only some calls (`import_dns_zone`, `update_domain_settings`) and
+  bind their token to live state as well as the arguments (a price, a record's version).
+
 ## v0.4.0 — 2026-11-06
 
 ### Added

@@ -1,9 +1,14 @@
 # Routes the public API marks x-destructive (an AI app key needs the delete
 # scope for them), from the OpenAPI document at
 # https://docs.pantechdynamics.com/openapi/public-api.yaml. Keep in sync with it.
+DELETE /certificates/{certificate_id}
 DELETE /databases/{database_id}
 DELETE /databases/{database_id}/snapshots/{snapshot_id}
+DELETE /dns/zones/{zone_id}
+DELETE /dns/zones/{zone_id}/records/{record_id}
 DELETE /firewall-rules/{rule_id}
+DELETE /iam/policies/{policy_id}
+DELETE /iam/teams/{team_id}
 DELETE /instances/{instance_id}
 DELETE /instances/{instance_id}/private-network
 DELETE /kubernetes-clusters/{cluster_id}
@@ -13,11 +18,18 @@ DELETE /migrations/{migration_id}
 DELETE /networks/{network_id}
 DELETE /port-forwarding-rules/{rule_id}
 DELETE /public-ips/{public_ip_id}
+DELETE /registry/repositories/{repository_id}
+DELETE /registry/repositories/{repository_id}/tags/{tag}
+DELETE /registry/tokens/{token_id}
 DELETE /security-groups/{security_group_id}
 DELETE /snapshots/{snapshot_id}
 DELETE /ssh-keys/{ssh_key_id}
 DELETE /subnets/{subnet_id}
 DELETE /volumes/{volume_id}
 DELETE /webhooks/{webhook_id}
+GET /domains/{domain_id}/auth-code
+POST /certificates/{certificate_id}/export
+POST /certificates/{certificate_id}/revoke
+POST /domains/{domain_id}/auth-code
 POST /instances/{instance_id}/rebuild
 POST /instances/{instance_id}/restore
