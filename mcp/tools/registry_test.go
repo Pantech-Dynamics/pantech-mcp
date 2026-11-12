@@ -13,7 +13,7 @@ import (
 var wantRisk = map[string]Risk{
 	"whoami": Read, "list_regions": Read, "list_plans": Read, "list_images": Read, "estimate_price": Read,
 	"get_usage": Read, "get_credit_balance": Read,
-	"list_instances": Read, "get_instance": Read, "create_instance": Cost, "start_instance": Write, "stop_instance": Write,
+	"list_instances": Read, "get_instance": Read, "get_remote_desktop": Read, "create_instance": Cost, "start_instance": Write, "stop_instance": Write,
 	"reboot_instance": Write, "resize_instance": Cost, "rename_instance": Write, "delete_instance": Destructive,
 	"list_ssh_keys": Read, "create_ssh_key": Write, "change_instance_ssh_key": Destructive,
 	"list_networks": Read, "create_network": Cost, "list_subnets": Read, "create_subnet": Write,
