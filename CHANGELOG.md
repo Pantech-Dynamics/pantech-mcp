@@ -7,10 +7,10 @@ tagged and released (binaries on GitHub, the image on ghcr.io).
 
 ### Added
 
-- Windows Server instances. `create_instance` takes no `ssh_key_id` for a Windows image: it
-  refuses a key, the agent, and a plan under the image's minimum size, and its preview says how
-  to sign in over Remote Desktop. `get_remote_desktop` gives a Windows instance's address, port
-  and user. The Administrator password is shown once in the console and never through a tool.
+- Windows Server instances. `get_remote_desktop` gives a Windows instance's address, port and
+  user. A Windows VM is created in the console, where the user types its Administrator password
+  (and can reset it later): `create_instance` refuses a Windows image and says so, since a
+  password never passes through a tool. A Linux image still needs `ssh_key_id`.
 
 ## v0.5.0 — 2026-11-10
 

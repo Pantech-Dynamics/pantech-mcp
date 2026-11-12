@@ -1960,50 +1960,34 @@ func TestHTTPSLoadBalancers(t *testing.T) {
 	}
 }
 
-// TestCreateWindowsInstance checks a Windows image's rules: no SSH key is sent
-// or accepted, the agent is refused, a plan under the image's minimum is
-// refused, and a Linux image still needs a key.
+// TestCreateWindowsInstance checks a Windows image is never ordered here:
+// its password is typed by the user in the console and must not pass through
+// an AI app, so every Windows create is refused with the way to do it, and a
+// Linux image still needs a key.
 func TestCreateWindowsInstance(t *testing.T) {
 	api, srv := newFakeAPI(t)
 	cs := connect(t, srv.URL+apiPrefix, testKey, nil)
 
-	refused := []map[string]any{
-		{"name": "win", "plan_slug": "x1", "image_slug": "windows-server-2025", "ssh_key_id": "sshk_1"},
-		{"name": "win", "plan_slug": "x1", "image_slug": "windows-server-2025", "agent": true},
-		{"name": "win", "plan_slug": "s-1", "image_slug": "windows-server-2025"},
+	for _, args := range []map[string]any{
+		{"name": "win", "plan_slug": "m-2", "image_slug": "windows-server-2025"},
+		{"name": "win", "plan_slug": "m-2", "image_slug": "windows-server-2025", "ssh_key_id": "sshk_1"},
+	} {
+		res, text := call(t, cs, "create_instance", args)
+		if !res.IsError || !strings.Contains(text, "console") {
+			t.Errorf("%v: %v\n%s", args, res.IsError, text)
+		}
+	}
+	for _, args := range []map[string]any{
+		{"name": "win", "plan_slug": "m-2", "image_slug": "windows-server-2025", "confirmation_token": "forged"},
 		{"name": "web", "plan_slug": "s-1", "image_slug": "ubuntu-24-04"},
 		{"name": "web", "plan_slug": "s-1", "image_slug": "no-such-image", "ssh_key_id": "sshk_1"},
-	}
-	for _, args := range refused {
+	} {
 		if res, text := call(t, cs, "create_instance", args); !res.IsError {
 			t.Errorf("%v was accepted:\n%s", args, text)
 		}
 	}
-
-	// x1 is 2 vCPU / 2048 MB, under the 4096 MB minimum; a bigger plan is needed.
-	if res, text := call(t, cs, "create_instance", map[string]any{"name": "win", "plan_slug": "x1", "image_slug": "windows-server-2025"}); !res.IsError || !strings.Contains(text, "4096") {
-		t.Errorf("x1 for Windows: %v %s", res.IsError, text)
-	}
 	if n := len(api.calls("POST", "/instances")); n != 0 {
 		t.Fatalf("refused creates sent %d orders", n)
-	}
-}
-
-// TestCreateWindowsInstanceSendsNoKey checks the confirmed order for a Windows
-// image leaves ssh_key_id out, and its preview says how to sign in.
-func TestCreateWindowsInstanceSendsNoKey(t *testing.T) {
-	api, srv := newFakeAPI(t)
-	cs := connect(t, srv.URL+apiPrefix, testKey, nil)
-	args := map[string]any{"name": "win", "plan_slug": "m-2", "image_slug": "windows-server-2025"}
-	res, text := call(t, cs, "create_instance", args)
-	if res.IsError || !strings.Contains(text, "Remote Desktop") || !strings.Contains(text, "Administrator") {
-		t.Fatalf("preview:\n%s", text)
-	}
-	args["confirmation_token"] = structured(t, res)["data"].(map[string]any)["confirmation_token"]
-	call(t, cs, "create_instance", args)
-	posts := api.calls("POST", "/instances")
-	if len(posts) != 1 || strings.Contains(posts[0].Body, "ssh_key_id") || !strings.Contains(posts[0].Body, `"image_slug":"windows-server-2025"`) {
-		t.Fatalf("sent %+v", posts)
 	}
 }
 

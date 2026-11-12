@@ -30,7 +30,7 @@ type createInstanceInput struct {
 	Name            string            `json:"name" jsonschema:"1 to 255 lowercase letters, digits and hyphens, unique among your instances."`
 	PlanSlug        string            `json:"plan_slug" jsonschema:"The size, from list_plans."`
 	ImageSlug       string            `json:"image_slug" jsonschema:"The operating system, from list_images."`
-	SSHKeyID        string            `json:"ssh_key_id,omitempty" jsonschema:"An SSH key from list_ssh_keys, installed for the default user. Required, except for a Windows Server image (os_family windows in list_images), which takes none: it signs in over Remote Desktop with a generated password."`
+	SSHKeyID        string            `json:"ssh_key_id,omitempty" jsonschema:"An SSH key from list_ssh_keys, installed for the default user. Required: every image this tool creates signs in with a key."`
 	Region          string            `json:"region,omitempty" jsonschema:"A region code from list_regions, e.g. af-abj."`
 	SubnetID        string            `json:"subnet_id,omitempty" jsonschema:"Place the instance in this VPC subnet (private address only)."`
 	NetworkID       string            `json:"network_id,omitempty" jsonschema:"The subnet's VPC."`
@@ -95,7 +95,7 @@ func init() {
 
 	addConfirmed(Spec{
 		Name: "create_instance", Title: "Create an instance",
-		Description: "Create a virtual server. It is paid first: the initial payment is taken from credit (or the saved card), then it is provisioned. Waits up to a minute, then returns the order and operation ids. A Windows Server image takes no ssh_key_id or agent, needs a plan of at least its min_vcpu and min_memory_mb, and is reached with get_remote_desktop.",
+		Description: "Create a virtual server. It is paid first: the initial payment is taken from credit (or the saved card), then it is provisioned. Waits up to a minute, then returns the order and operation ids. A Windows Server image (os_family windows in list_images) cannot be created here: its password is typed by the user in the console.",
 		Risk:        Cost,
 		Routes:      []string{"GET /plans", "GET /images", "GET /billing/credit", "POST /instances", "GET /instance-orders/{order_id}", "GET /operations/{operation_id}"},
 	}, func(ctx context.Context, c *Call, in createInstanceInput) (*Preview, error) {
@@ -111,7 +111,7 @@ func init() {
 		if img == nil {
 			return nil, errorf("There is no image %s. Call list_images for the image slugs.", arg(in.ImageSlug))
 		}
-		if err := checkImageAccess(img, in, plan); err != nil {
+		if err := checkImageAccess(img, in); err != nil {
 			return nil, err
 		}
 		p := &Preview{
@@ -122,9 +122,6 @@ func init() {
 		}
 		if in.Agent {
 			p.Action += " The Pantech agent is installed at first boot, so an AI app can work in it through a tools session."
-		}
-		if img.windows() {
-			p.Warnings = append(p.Warnings, windowsNote(in.SubnetID != ""))
 		}
 		if note := c.creditNote(ctx); note != "" {
 			p.Warnings = append(p.Warnings, note)
@@ -293,10 +290,9 @@ func init() {
 }
 
 // createInstance places the order. The SDK's request has no agent_enabled
-// yet and always sends ssh_key_id, so an instance with the agent, or a
-// Windows one with no key, is sent through Do with the body adjusted.
+// yet, so an instance with the agent is sent through Do with the field added.
 func (c *Call) createInstance(ctx context.Context, in createInstanceInput) (*pantech.OrderAccepted, error) {
-	if !in.Agent && in.SSHKeyID != "" {
+	if !in.Agent {
 		return c.Client.Instances.Create(ctx, in.request(), c.writeOpts()...)
 	}
 	raw, err := json.Marshal(in.request())
@@ -307,12 +303,7 @@ func (c *Call) createInstance(ctx context.Context, in createInstanceInput) (*pan
 	if err := json.Unmarshal(raw, &body); err != nil {
 		return nil, err
 	}
-	if in.Agent {
-		body["agent_enabled"] = true
-	}
-	if in.SSHKeyID == "" {
-		delete(body, "ssh_key_id")
-	}
+	body["agent_enabled"] = true
 	var order pantech.OrderAccepted
 	if err := c.Client.Do(ctx, "POST", "/instances", nil, body, &order, c.writeOpts()...); err != nil {
 		return nil, err
