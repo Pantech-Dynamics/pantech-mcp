@@ -9,18 +9,18 @@ import (
 )
 
 // Windows Server instances sign in over Remote Desktop as Administrator with
-// a password the platform generates. The password is shown once, in the
-// console, and never through this server: like every other secret it stays
-// out of the AI app's transcript (see excluded.go).
+// a password the user chooses when they create the instance, and can reset
+// later. Both happen in the console, never through this server: like every
+// other secret the password stays out of the AI app's transcript (see
+// excluded.go). So a Windows image cannot be created here at all, since the
+// API needs that password with the order.
 
 const rdpPort = 3389
 
 // imageFamily is the part of an image the SDK does not carry yet.
 type imageFamily struct {
-	Slug        string `json:"slug"`
-	OSFamily    string `json:"os_family"`
-	MinVCPU     int    `json:"min_vcpu"`
-	MinMemoryMB int    `json:"min_memory_mb"`
+	Slug     string `json:"slug"`
+	OSFamily string `json:"os_family"`
 }
 
 func (i *imageFamily) windows() bool { return i != nil && i.OSFamily == "windows" }
@@ -51,37 +51,16 @@ func (c *Call) findImage(ctx context.Context, slug string) (*imageFamily, error)
 }
 
 // checkImageAccess applies an image's sign-in rules to a create: a Windows
-// image takes no SSH key and no agent and has a minimum size; any other image
-// needs a key.
-func checkImageAccess(img *imageFamily, in createInstanceInput, plan *pantech.Plan) error {
-	if !img.windows() {
-		if in.SSHKeyID == "" {
-			return errorf("ssh_key_id is required for image %s. Call list_ssh_keys, or create_ssh_key with the user's public key.", arg(in.ImageSlug))
-		}
-		return nil
+// image is created in the console, where the user types its password; any
+// other image needs a key.
+func checkImageAccess(img *imageFamily, in createInstanceInput) error {
+	if img.windows() {
+		return errorf("Image %s is Windows Server, which signs in with an Administrator password the user types when creating it. Passwords never pass through this server, so ask the user to create it in the console (Virtual machines > Create). Once it exists, get_remote_desktop gives its address.", arg(in.ImageSlug))
 	}
-	if in.SSHKeyID != "" {
-		return errorf("Image %s is Windows Server: it signs in over Remote Desktop with a generated password, not an SSH key. Leave ssh_key_id out.", arg(in.ImageSlug))
-	}
-	if in.Agent {
-		return errorf("The Pantech agent runs on Linux only; leave agent out for Windows image %s.", arg(in.ImageSlug))
-	}
-	if plan.VCPU < img.MinVCPU || plan.MemoryMB < img.MinMemoryMB {
-		return errorf("Image %s needs a plan with at least %d vCPU and %d MB memory; %s has %d vCPU and %d MB. Call list_plans for a bigger one.",
-			arg(in.ImageSlug), img.MinVCPU, img.MinMemoryMB, plan.Slug, plan.VCPU, plan.MemoryMB)
+	if in.SSHKeyID == "" {
+		return errorf("ssh_key_id is required for image %s. Call list_ssh_keys, or create_ssh_key with the user's public key.", arg(in.ImageSlug))
 	}
 	return nil
-}
-
-// windowsNote is what a Windows create's preview tells the user about signing in.
-func windowsNote(vpc bool) string {
-	s := fmt.Sprintf("Windows Server: sign in over Remote Desktop (port %d) as Administrator. The password is generated at creation and shown once, on the instance's RDP tab in the console; if nobody looks at it, it is deleted after 7 days.", rdpPort)
-	if vpc {
-		s += fmt.Sprintf(" In a VPC it needs a public IP with a port forward for %d, and the subnet's ACL must allow %d from the user's address.", rdpPort, rdpPort)
-	} else {
-		s += fmt.Sprintf(" Its security group must allow TCP %d from the user's address (add_firewall_rule), ideally that address only.", rdpPort)
-	}
-	return s
 }
 
 type remoteDesktopInstance struct {
@@ -97,7 +76,7 @@ type remoteDesktopInstance struct {
 func init() {
 	add(Spec{
 		Name: "get_remote_desktop", Title: "Get Remote Desktop details",
-		Description: "How to connect to a Windows Server instance over Remote Desktop: the address and port, the Administrator user, and where the user sees the one-time password (the console; it never passes through this tool). For a Linux instance, use get_ssh_access instead.",
+		Description: "How to connect to a Windows Server instance over Remote Desktop: the address and port and the Administrator user. The password is the one the user chose when creating it; it never passes through this tool, and the user resets it in the console. For a Linux instance, use get_ssh_access instead.",
 		Risk:        Read, Idempotent: true,
 		Routes: []string{"GET /instances/{instance_id}"},
 	}, func(ctx context.Context, c *Call, in instanceInput) (*Result, error) {
@@ -125,7 +104,7 @@ func init() {
 		default:
 			text += " It has no public address yet."
 		}
-		text += " The password is shown once, on the instance's RDP tab in the console; this tool cannot read it."
+		text += " The password is the one the user chose when creating it; this tool cannot read it. A forgotten one is reset in the console, on the instance's RDP tab."
 		return ok(text, map[string]any{
 			"instance_id": vm.ID, "username": "Administrator", "address": address, "port": rdpPort, "in_vpc": vpc,
 		})
