@@ -5,6 +5,13 @@ tagged and released (binaries on GitHub, the image on ghcr.io).
 
 ## Unreleased
 
+### Added
+
+- Windows Server instances. `create_instance` takes no `ssh_key_id` for a Windows image: it
+  refuses a key, the agent, and a plan under the image's minimum size, and its preview says how
+  to sign in over Remote Desktop. `get_remote_desktop` gives a Windows instance's address, port
+  and user. The Administrator password is shown once in the console and never through a tool.
+
 ### Changed
 
 - The domain tools and the server's instructions name the Domain Registration Agreement and
