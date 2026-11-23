@@ -156,7 +156,7 @@ record changed after the preview. Deleting a zone or a record, importing a zone 
 The domain tools search, buy, transfer in and renew domains, paid in full from your organization's
 Pantech credit. The preview of `register_domain`, `transfer_domain` and `renew_domain` gives the
 exact total for the years asked, says it is taken from credit and cannot be undone, and names the
-registration agreement: confirming accepts it. If the price changes after the preview, the
+[Domain Registration Agreement](https://pantechdynamics.com/legal/domain-registration): confirming accepts it. If the price changes after the preview, the
 confirmation is refused. A failed order returns the money to credit. An order the credit does not
 cover waits up to an hour for the difference: in US dollars the saved card is charged it (a payment
 link appears only if the bank asks the user to confirm), and in naira the user adds credit;

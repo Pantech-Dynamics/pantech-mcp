@@ -17,7 +17,7 @@ import (
 // domain cannot be returned, so every paid tool is confirmed, its preview
 // names the exact total, and its token is bound to that total: if the price
 // changes after the preview, the confirmation is refused. Confirming also
-// accepts the registration agreement, which the tool sends as accept_terms.
+// accepts the Domain Registration Agreement, which the tool sends as accept_terms.
 //
 // The registrant contact is personal data. It is sent to the API, shown back
 // only in the fenced data, and never put in our own text. An auth code (to
@@ -368,7 +368,7 @@ func (c *Call) creditWarning(ctx context.Context, q *domainQuote) []string {
 }
 
 const (
-	termsNote   = "Confirming accepts the domain registration agreement for the registrant. Ask the user to confirm that they accept it (it is shown at checkout in the Pantech console and in Pantech's Domains documentation), not only the price."
+	termsNote   = "Confirming accepts the Domain Registration Agreement (https://pantechdynamics.com/legal/domain-registration) for the registrant. Ask the user to confirm that they accept it, not only the price."
 	refundNote  = "The amount, VAT included where it applies, is taken from credit before the registrar is asked. If the credit falls short, the order waits up to an hour for the difference: the saved card is charged it in US dollars, and in naira the user adds credit. If the order fails, all of it returns to the organization's credit."
 	noUndoNote  = "This cannot be undone: once the registrar accepts it, the domain cannot be returned and the payment is not refunded."
 	verifyNote  = "The registry emails the registrant to verify the contact. If it is not clicked within 15 days, the registry suspends the domain."
@@ -603,7 +603,7 @@ func init() {
 
 	addConfirmedWith(Spec{
 		Name: "register_domain", Title: "Register a domain",
-		Description: "Buy a domain for 1 to 10 years, paid in full from the organization's Pantech credit. The preview gives the exact total; if the price changes after it, the confirmation is refused. Confirming accepts the registration agreement for the registrant. The domain gets a Pantech DNS zone, privacy protection and the transfer lock, and Pantech renews it from credit when auto-renew is on. A failed registration returns the money to credit; a registered domain cannot be returned. Owners and admins only.",
+		Description: "Buy a domain for 1 to 10 years, paid in full from the organization's Pantech credit. The preview gives the exact total; if the price changes after it, the confirmation is refused. Confirming accepts the Domain Registration Agreement (https://pantechdynamics.com/legal/domain-registration) for the registrant. The domain gets a Pantech DNS zone, privacy protection and the transfer lock, and Pantech renews it from credit when auto-renew is on. A failed registration returns the money to credit; a registered domain cannot be returned. Owners and admins only.",
 		Risk:        Cost,
 		Routes:      []string{"GET /domains/search", "GET /billing/credit", "POST /domains", "GET /domain-orders/{order_id}"},
 	}, confirmOptions[registerDomainInput]{
@@ -648,7 +648,7 @@ func init() {
 
 	addConfirmedWith(Spec{
 		Name: "transfer_domain", Title: "Transfer a domain to Pantech",
-		Description: "Move a domain registered elsewhere to Pantech, paid in full from the organization's Pantech credit; the transfer adds a year. Unlock the domain at its current registrar and get its auth code first (check_domain_transfer says if it can move). The preview gives the exact total; if the price changes after it, the confirmation is refused. Confirming accepts the registration agreement for the registrant. A failed transfer returns the money to credit. Owners and admins only.",
+		Description: "Move a domain registered elsewhere to Pantech, paid in full from the organization's Pantech credit; the transfer adds a year. Unlock the domain at its current registrar and get its auth code first (check_domain_transfer says if it can move). The preview gives the exact total; if the price changes after it, the confirmation is refused. Confirming accepts the Domain Registration Agreement (https://pantechdynamics.com/legal/domain-registration) for the registrant. A failed transfer returns the money to credit. Owners and admins only.",
 		Risk:        Cost,
 		Routes:      []string{"GET /domains/transfer-check", "GET /billing/credit", "POST /domains/transfers", "GET /domain-orders/{order_id}"},
 	}, confirmOptions[transferDomainInput]{
