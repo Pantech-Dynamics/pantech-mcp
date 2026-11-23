@@ -3,6 +3,15 @@
 Releases are cut from this file: a new `## vX.Y.Z — YYYY-MM-DD` heading pushed to main is
 tagged and released (binaries on GitHub, the image on ghcr.io).
 
+## Unreleased
+
+### Fixed
+
+- `connect_cloud_account` and the Migrate guidance no longer send the user to the Pantech
+  console's Migrate page, which is not available yet. Without a one-click link, the steps say to
+  get the role's template with `pantech migrate connect` in the CLI, or from the connection's
+  `setup.template` in the API.
+
 ## v0.5.0 — 2026-11-10
 
 ### Added

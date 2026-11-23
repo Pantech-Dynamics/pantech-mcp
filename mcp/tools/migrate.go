@@ -14,8 +14,9 @@ import (
 // a read-only role the user creates in their own account, which only Pantech
 // can assume, with short-lived tokens. No tool here takes or returns cloud
 // access keys, and the role's template is left out of results (the user
-// opens the one-click link or gets the template from the connection's page in
-// the console; `pantech migrate connect` in the CLI connects with it too). Names,
+// opens the one-click link, or gets the template with `pantech migrate connect`
+// in the CLI or from the connection in the API; Migrate is not in the
+// console yet). Names,
 // tags and everything a scan found are the customer's own text, so they go
 // only in the fenced data. Copying servers is not available yet: a plan is
 // reviewed, edited and exported as Terraform.
@@ -219,7 +220,7 @@ func (conn *cloudConnection) sanitize() *cloudConnection {
 }
 
 // consoleFallback is the step when there is no one-click link.
-const consoleFallback = "download this connection's template from its page in the Pantech console (Migrate) and create a stack from it in the AWS account to move from"
+const consoleFallback = "get this connection's CloudFormation template (the API returns it as setup.template in GET /public/v1/cloud-connections/{connection_id}; or start the connection with `pantech migrate connect` in the Pantech CLI instead, which saves the template to a file) and create a stack from it in the AWS account to move from"
 
 // connectionText describes a connection's status and the next step.
 func connectionText(conn *cloudConnection) string {
@@ -331,7 +332,7 @@ func migrationText(m *migration) string {
 func init() {
 	add(Spec{
 		Name: "connect_cloud_account", Title: "Connect an AWS account to plan a move",
-		Description: "Start a connection to the user's AWS account for Pantech Migrate. Nothing is shared yet: it returns a one-click link that opens AWS's create-stack page, which creates in the user's account a read-only role only Pantech can assume, with short-lived tokens. Give the user the link and the steps (the template is also downloadable from the connection's page in the Pantech console; a user who prefers the CLI can instead connect with `pantech migrate connect`, which saves it); then send the stack's RoleArn output with set_cloud_role. " + migrateGuide + " Owners and admins only; at most 10 connections.",
+		Description: "Start a connection to the user's AWS account for Pantech Migrate. Nothing is shared yet: it returns a one-click link that opens AWS's create-stack page, which creates in the user's account a read-only role only Pantech can assume, with short-lived tokens. Give the user the link and the steps (Migrate is not in the Pantech console yet; a user who prefers the CLI can instead connect with `pantech migrate connect`, which saves the template to a file, and the API returns it as setup.template on the connection); then send the stack's RoleArn output with set_cloud_role. " + migrateGuide + " Owners and admins only; at most 10 connections.",
 		Risk:        Write,
 		Routes:      []string{"POST /cloud-connections"},
 	}, func(ctx context.Context, c *Call, in connectCloudAccountInput) (*Result, error) {
@@ -350,7 +351,7 @@ func init() {
 		}
 		b.WriteString("2. Tick the acknowledgement that the stack creates an IAM role, and create the stack. It makes a read-only role only Pantech can assume.\n")
 		b.WriteString("3. When the stack is complete, copy its RoleArn output and share it here; then call set_cloud_role with it.\n")
-		b.WriteString("The template itself is not shown here; the user can download it from this connection's page in the Pantech console (Migrate). " + migrateGuide)
+		b.WriteString("The template itself is not shown here; the API returns it as setup.template in GET /public/v1/cloud-connections/{connection_id}. " + migrateGuide)
 		return ok(b.String(), conn)
 	})
 
