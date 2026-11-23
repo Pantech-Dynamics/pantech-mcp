@@ -5,6 +5,12 @@ tagged and released (binaries on GitHub, the image on ghcr.io).
 
 ## Unreleased
 
+### Changed
+
+- The domain tools and the server's instructions name the Domain Registration Agreement and
+  link it (https://pantechdynamics.com/legal/domain-registration): `register_domain` and `transfer_domain` previews say confirming
+  accepts it.
+
 ### Fixed
 
 - `connect_cloud_account` and the Migrate guidance no longer send the user to the Pantech

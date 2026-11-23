@@ -1522,7 +1522,7 @@ func TestRegisterDomainNamesTheExactTotalAndBindsIt(t *testing.T) {
 	args := map[string]any{"name": "example.com", "years": 2, "contact": testContact()}
 	res, text := call(t, cs, "register_domain", args)
 	for _, want := range []string{"PREVIEW", "Register the domain example.com for 2 years", "Price: USD 30.00 in total for 2 years",
-		"taken from the organization's Pantech credit", "cannot be undone", "returns to the organization's credit", "registration agreement"} {
+		"taken from the organization's Pantech credit", "cannot be undone", "returns to the organization's credit", "Domain Registration Agreement (https://pantechdynamics.com/legal/domain-registration)"} {
 		if res.IsError || !strings.Contains(text, want) {
 			t.Fatalf("preview lacks %q:\n%s", want, text)
 		}
