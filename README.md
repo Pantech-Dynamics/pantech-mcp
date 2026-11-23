@@ -136,8 +136,8 @@ session at any time.
 
 The Migrate tools plan a move from an AWS account. Your AI app only guides you: Pantech reads the
 account itself, through a read-only role you create in it from the link `connect_cloud_account`
-returns (the role's template can also be downloaded in the Pantech console, or with `pantech migrate connect` in
-the CLI), and you never give the app
+returns (the role's template is also saved by `pantech migrate connect` in the CLI, and returned by the
+API on the connection; Migrate is not in the Pantech console yet), and you never give the app
 or Pantech access keys, only the role's ARN. A scan costs USD 0.01 on your AWS bill for reading
 spend, so it is two-step. A plan maps what the scan found to Pantech, flags what cannot move yet
 and compares Pantech's monthly price with your current bill; nothing is created until you export

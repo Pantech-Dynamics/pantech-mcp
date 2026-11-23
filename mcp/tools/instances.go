@@ -217,7 +217,7 @@ func init() {
 
 	addConfirmed(Spec{
 		Name: "delete_instance", Title: "Delete an instance",
-		Description: "Delete an instance. It is stopped, a safety snapshot of its root disk is kept for 24 hours, then it is removed. Attached volumes are detached, not deleted. Needs an AI app connected with Manage and delete access.",
+		Description: "Delete an instance and its root disk; this cannot be undone. Attached volumes are detached and kept, not deleted. Needs an AI app connected with Manage and delete access.",
 		Risk:        Destructive, Destructive: true, Idempotent: true,
 		Routes: []string{"GET /instances/{instance_id}", "GET /instances/{instance_id}/volumes", "GET /public-ips",
 			"GET /public-ips/{public_ip_id}/port-forwarding-rules", "DELETE /instances/{instance_id}", "GET /operations/{operation_id}"},
@@ -230,7 +230,7 @@ func init() {
 			return nil, err
 		}
 		p := &Preview{
-			Action:   fmt.Sprintf("Permanently delete instance %s. Everything on its root disk is lost after the 24-hour safety snapshot expires.", vm.ID),
+			Action:   fmt.Sprintf("Permanently delete instance %s. Everything on its root disk is lost and cannot be recovered.", vm.ID),
 			Warnings: []string{deleteAccessNote},
 			Data:     map[string]any{"instance": vm},
 		}

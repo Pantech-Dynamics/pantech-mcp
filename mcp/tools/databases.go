@@ -274,7 +274,7 @@ func init() {
 
 	addConfirmed(Spec{
 		Name: "delete_database", Title: "Delete a database",
-		Description: "Delete a managed database and all its data. Its data disk and a safety snapshot are kept 12 and 24 hours, then destroyed; snapshots you took are kept and stay billed. The unused part of its upfront payment returns to credit. Needs an AI app connected with Manage and delete access.",
+		Description: "Delete a managed database and all its data. Its data is deleted and cannot be recovered, and billing for it stops; snapshots you took are kept and stay billed. The unused part of its upfront payment returns to credit. Needs an AI app connected with Manage and delete access.",
 		Risk:        Destructive, Destructive: true, Idempotent: true,
 		Routes: []string{"GET /databases/{database_id}", "DELETE /databases/{database_id}", "GET /operations/{operation_id}"},
 	}, func(ctx context.Context, c *Call, in deleteDatabaseInput) (*Preview, error) {
@@ -286,7 +286,7 @@ func init() {
 			return nil, err
 		}
 		return &Preview{
-			Action: fmt.Sprintf("Permanently delete database %s (%s %s, %d GB) and all its data. Its hostname stops working at once; the data disk and a safety snapshot are destroyed 12 and 24 hours later.", db.ID, arg(db.Engine), arg(db.Version), db.DataVolumeSizeGB),
+			Action: fmt.Sprintf("Permanently delete database %s (%s %s, %d GB) and all its data. Its hostname stops working at once, and its data is deleted and cannot be recovered.", db.ID, arg(db.Engine), arg(db.Version), db.DataVolumeSizeGB),
 			Warnings: []string{
 				"Data loss: every table and row is gone once retention ends. Take a snapshot first (create_database_snapshot) if it may be needed.",
 				"Snapshots you took are kept and stay billed until you delete them. The unused part of the upfront payment returns to your credit.",

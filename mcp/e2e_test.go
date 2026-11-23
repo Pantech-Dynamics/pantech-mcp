@@ -1420,7 +1420,7 @@ func TestMigrateKeepsTheTemplateOutAndFencesTheInventory(t *testing.T) {
 // TestMigrateDropsLinksOutsideTheAWSConsole checks that a one-click link that
 // is not a plain https link to the AWS console is never handed on: it is null
 // in the data of every tool that returns a connection, and the steps point to
-// the connection's page in the Pantech console instead.
+// the template from the API or the CLI instead (Migrate is not in the console).
 func TestMigrateDropsLinksOutsideTheAWSConsole(t *testing.T) {
 	api, srv := newFakeAPI(t)
 	cs := connect(t, srv.URL+apiPrefix, testKey, nil)
@@ -1449,8 +1449,9 @@ func TestMigrateDropsLinksOutsideTheAWSConsole(t *testing.T) {
 			if !strings.Contains(text, `"quick_create_url":null`) {
 				t.Errorf("%s with %s: the link is not null: %s", c.tool, link, text)
 			}
-			if c.tool == "connect_cloud_account" && (!strings.Contains(text, "page in the Pantech console") || strings.Contains(text, "quick_create_url in the data")) {
-				t.Errorf("connect with %s gives no console fallback: %s", link, text)
+			if c.tool == "connect_cloud_account" && (!strings.Contains(text, "pantech migrate connect") || !strings.Contains(text, "setup.template") ||
+				strings.Contains(text, "page in the Pantech console") || strings.Contains(text, "quick_create_url in the data")) {
+				t.Errorf("connect with %s gives no CLI or API fallback: %s", link, text)
 			}
 		}
 	}
