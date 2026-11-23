@@ -259,7 +259,7 @@ var addonNames = []string{"metrics-server", "csi-driver", "ingress-controller"}
 func init() {
 	addConfirmed(Spec{
 		Name: "delete_kubernetes_cluster", Title: "Delete a Kubernetes cluster",
-		Description: "Delete a Kubernetes cluster. It stops at once and stops billing; its nodes and disks are destroyed 12 hours later and cannot be recovered, and volumes created through persistent volume claims are deleted with it. Needs an AI app connected with Manage and delete access.",
+		Description: "Delete a Kubernetes cluster. It stops at once and stops billing; its nodes and their disks are destroyed and cannot be recovered, and volumes created through persistent volume claims are deleted with it. Needs an AI app connected with Manage and delete access.",
 		Risk:        Destructive, Destructive: true, Idempotent: true,
 		Routes: []string{"GET /kubernetes-clusters/{cluster_id}", "DELETE /kubernetes-clusters/{cluster_id}", "GET /operations/{operation_id}"},
 	}, func(ctx context.Context, c *Call, in deleteClusterInput) (*Preview, error) {
@@ -271,7 +271,7 @@ func init() {
 			return nil, err
 		}
 		return &Preview{
-			Action: fmt.Sprintf("Permanently delete Kubernetes cluster %s (%d nodes). Every workload stops at once; its nodes and disks are destroyed 12 hours later and cannot be recovered.", cl.ID, cl.Nodes),
+			Action: fmt.Sprintf("Permanently delete Kubernetes cluster %s (%d nodes). Every workload stops at once; its nodes and their disks are destroyed and cannot be recovered.", cl.ID, cl.Nodes),
 			Warnings: []string{
 				"Data loss: volumes your workloads created through persistent volume claims are deleted with the cluster.",
 				deleteAccessNote,

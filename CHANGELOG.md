@@ -11,6 +11,9 @@ tagged and released (binaries on GitHub, the image on ghcr.io).
   console's Migrate page, which is not available yet. Without a one-click link, the steps say to
   get the role's template with `pantech migrate connect` in the CLI, or from the connection's
   `setup.template` in the API.
+- `delete_instance`, `delete_database` and `delete_kubernetes_cluster` say what a delete does
+  and that it cannot be undone, matching the API reference. They no longer describe safety
+  snapshots or retention, and a cluster's nodes are destroyed at once, not 12 hours later.
 
 ## v0.5.0 — 2026-11-10
 
