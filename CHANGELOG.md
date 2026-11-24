@@ -5,6 +5,13 @@ tagged and released (binaries on GitHub, the image on ghcr.io).
 
 ## Unreleased
 
+### Added
+
+- Windows Server instances. `get_remote_desktop` gives a Windows instance's address, port and
+  user. A Windows VM is created in the console, where the user types its Administrator password
+  (and can reset it later): `create_instance` refuses a Windows image and says so, since a
+  password never passes through a tool. A Linux image still needs `ssh_key_id`.
+
 ### Changed
 
 - The domain tools and the server's instructions name the Domain Registration Agreement and

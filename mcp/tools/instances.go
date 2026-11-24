@@ -30,7 +30,7 @@ type createInstanceInput struct {
 	Name            string            `json:"name" jsonschema:"1 to 255 lowercase letters, digits and hyphens, unique among your instances."`
 	PlanSlug        string            `json:"plan_slug" jsonschema:"The size, from list_plans."`
 	ImageSlug       string            `json:"image_slug" jsonschema:"The operating system, from list_images."`
-	SSHKeyID        string            `json:"ssh_key_id" jsonschema:"An SSH key from list_ssh_keys, installed for the default user."`
+	SSHKeyID        string            `json:"ssh_key_id,omitempty" jsonschema:"An SSH key from list_ssh_keys, installed for the default user. Required: every image this tool creates signs in with a key."`
 	Region          string            `json:"region,omitempty" jsonschema:"A region code from list_regions, e.g. af-abj."`
 	SubnetID        string            `json:"subnet_id,omitempty" jsonschema:"Place the instance in this VPC subnet (private address only)."`
 	NetworkID       string            `json:"network_id,omitempty" jsonschema:"The subnet's VPC."`
@@ -95,13 +95,23 @@ func init() {
 
 	addConfirmed(Spec{
 		Name: "create_instance", Title: "Create an instance",
-		Description: "Create a virtual server. It is paid first: the initial payment is taken from credit (or the saved card), then it is provisioned. Waits up to a minute, then returns the order and operation ids.",
+		Description: "Create a virtual server. It is paid first: the initial payment is taken from credit (or the saved card), then it is provisioned. Waits up to a minute, then returns the order and operation ids. A Windows Server image (os_family windows in list_images) cannot be created here: its password is typed by the user in the console.",
 		Risk:        Cost,
-		Routes:      []string{"GET /plans", "GET /billing/credit", "POST /instances", "GET /instance-orders/{order_id}", "GET /operations/{operation_id}"},
+		Routes:      []string{"GET /plans", "GET /images", "GET /billing/credit", "POST /instances", "GET /instance-orders/{order_id}", "GET /operations/{operation_id}"},
 	}, func(ctx context.Context, c *Call, in createInstanceInput) (*Preview, error) {
 		placement := placementOf(in.SubnetID, in.NetworkID)
 		plan, err := c.findPlan(ctx, in.PlanSlug, placement)
 		if err != nil {
+			return nil, err
+		}
+		img, err := c.findImage(ctx, in.ImageSlug)
+		if err != nil {
+			return nil, err
+		}
+		if img == nil {
+			return nil, errorf("There is no image %s. Call list_images for the image slugs.", arg(in.ImageSlug))
+		}
+		if err := checkImageAccess(img, in); err != nil {
 			return nil, err
 		}
 		p := &Preview{
