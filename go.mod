@@ -3,7 +3,7 @@ module github.com/Pantech-Dynamics/pantech-mcp
 go 1.26.0
 
 require (
-	github.com/Pantech-Dynamics/pantech-go v0.6.1-0.20261125134909-9abb50f07299
+	github.com/Pantech-Dynamics/pantech-go v0.6.1
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/zalando/go-keyring v0.2.8
 	golang.org/x/time v0.16.0
