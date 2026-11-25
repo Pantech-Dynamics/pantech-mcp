@@ -104,7 +104,7 @@ func copyAccessText(a *copyAccess) string {
 	case "not_requested":
 		return head + " Choose the buckets with set_bucket_copy_access."
 	case "awaiting_role":
-		return head + " The user creates a stack from the copy role's template (in AWS, next to the connection's stack; `pantech migrate copy-access` in the CLI saves the template, and the API returns it as setup.template in GET /public/v1/cloud-connections/{connection_id}/copy-access), then sends its CopyRoleArn output with set_bucket_copy_access."
+		return head + " The user creates a stack from the copy role's template (in AWS, next to the connection's stack; `pantech migrate buckets access` in the CLI saves the template, and the API returns it as setup.template in GET /public/v1/cloud-connections/{connection_id}/copy-access), then sends its CopyRoleArn output with set_bucket_copy_access."
 	case "verifying":
 		return head + " Pantech is checking the role against each bucket without reading any object; call get_bucket_copy_access again shortly."
 	case "verified":
@@ -152,7 +152,7 @@ type startServerCopyInput struct {
 	SubnetID        string `json:"subnet_id,omitempty" jsonschema:"The subnet for the new instance, e.g. sub_…"`
 	SecurityGroupID string `json:"security_group_id,omitempty" jsonschema:"The security group for the new instance, e.g. sg_…"`
 	SSHKeyID        string `json:"ssh_key_id,omitempty" jsonschema:"Optional: an SSH key to add; the copied disk keeps its own users and keys."`
-	CopyRoleARN     string `json:"copy_role_arn,omitempty" jsonschema:"For aws_snapshot: the copy stack's CopyRoleArn output (pantech migrate server-copy-template in the CLI saves the stack's template)."`
+	CopyRoleARN     string `json:"copy_role_arn,omitempty" jsonschema:"For aws_snapshot: the copy stack's CopyRoleArn output (pantech migrate servers template in the CLI saves the stack's template)."`
 	CreateSnapshots bool   `json:"create_snapshots,omitempty" jsonschema:"For aws_snapshot: the copy role snapshots the server's volumes itself."`
 }
 
