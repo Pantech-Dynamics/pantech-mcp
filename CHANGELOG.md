@@ -5,6 +5,30 @@ tagged and released (binaries on GitHub, the image on ghcr.io).
 
 ## Unreleased
 
+## v0.6.1 — 2026-11-25
+
+### Changed
+
+- `enroll_migrate_agent` works on every connection. AWS, Google Cloud, Azure and Huawei Cloud
+  connections can have an agent too: Pantech still scans those clouds itself, and their agent,
+  which needs no provider token, runs server copies, database imports and Kubernetes moves. The
+  preview no longer warns that enrolling on such a connection is refused
+  (`CLOUD_CONNECTION_NOT_AGENT`); it says what the agent there runs. The tool says a connection has
+  one agent, so enrolling one on a server to copy it replaces the long-running agent until that one
+  is enrolled again.
+- `start_server_copy` says how the agent copies a server: enrolled on the server itself and run
+  there as root (Administrator on Windows) with `run --server-copy` and the copy's id. Only an
+  agent started that way is handed the copy, and it reads only that server's own disks.
+- `start_database_import` says sources are named in the agent's configuration file
+  (`database_sources`, with the connection string in an environment variable or a file only the
+  agent's user can read), and that imports need the agent program on a host with `pg_dump` or
+  `mysqldump`, not the container image. An import waiting for its agent points to
+  `pantech-migrate-agent check`.
+- `start_kubernetes_move` says copy pods run only Pantech's copier image, which the source cluster
+  must be able to pull.
+- `revoke_migrate_agent` says revoking also ends the agent's server copy uploads in progress.
+- Built with pantech-go v0.6.1.
+
 ## v0.6.0 — 2026-11-25
 
 ### Added

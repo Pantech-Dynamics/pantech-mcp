@@ -147,6 +147,12 @@ keys, tokens or passwords.
   on your own machine with a read-only token that never leaves it. `enroll_migrate_agent` (two-step)
   gives a one-time command to enroll it; `revoke_migrate_agent` ends it.
 
+Any connection, AWS, Google Cloud, Azure and Huawei Cloud included, can have one Pantech Migrate
+agent for the copy steps that read from inside your network: server copies (the agent runs on the
+server itself, with `run --server-copy`), database imports (sources named in the agent's
+configuration file, whose connection strings never leave it) and Kubernetes moves. On the federated
+clouds Pantech still scans the cloud itself, and the agent needs no provider token.
+
 The setups are also saved by `pantech migrate connect` in the CLI and returned by the API on the
 connection; Migrate is not in the Pantech console yet. A scan of an AWS account costs USD 0.01 on
 your AWS bill for reading spend, so scans are two-step. A plan maps what the scan found to Pantech,

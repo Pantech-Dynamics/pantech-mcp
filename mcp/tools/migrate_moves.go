@@ -261,7 +261,7 @@ func serverCopyNext(st *moveState) string {
 func databaseImportNext(st *moveState) string {
 	switch st.Status {
 	case "awaiting_agent":
-		return "The user's Pantech Migrate agent must be running with this source configured (source_ref)."
+		return "The user's Pantech Migrate agent must be running, enrolled for the plan's connection, with this source_ref under database_sources in its configuration; pantech-migrate-agent check tests each source without sending anything."
 	case "blocked":
 		return "Read each blocking issue's message and fix in the data to the user; after they fix the source, check_database_import_readiness."
 	case "ready", "preflight", "copying", "cutting_over", "verifying":
@@ -482,7 +482,7 @@ func init() {
 
 	add(Spec{
 		Name: "start_server_copy", Title: "Start copying a server",
-		Description: "Start copying one planned server's disks into a new Pantech instance, with the item's plan (or plan_slug), the subnet and security group given, and optionally an SSH key. Nothing is created yet and the copy is free: the first pass copies every disk, sync_server_copy copies what changed since, and cut_over_server_copy builds the billed instance. With source agent (the default) the Pantech Migrate agent on the server sends its disks over HTTPS; with aws_snapshot Pantech reads EBS snapshots through a separate copy role (copy_role_arn). Windows servers are copied with the agent only, and need Windows Server enabled for the organization. At most five copies in progress. Owners and admins only.",
+		Description: "Start copying one planned server's disks into a new Pantech instance, with the item's plan (or plan_slug), the subnet and security group given, and optionally an SSH key. Nothing is created yet and the copy is free: the first pass copies every disk, sync_server_copy copies what changed since, and cut_over_server_copy builds the billed instance. With source agent (the default), on any cloud, the user enrolls the Pantech Migrate agent on the server itself for the plan's connection and runs it there as root (Administrator on Windows) with run --server-copy and this copy's id: only an agent started that way is handed the copy, and it reads only that server's own disks (the boot disk unless --disk names more). A connection has one agent, so this replaces its long-running agent until that one is enrolled again. With aws_snapshot Pantech reads EBS snapshots through a separate copy role (copy_role_arn). Windows servers are copied with the agent only, and need Windows Server enabled for the organization. At most five copies in progress. Owners and admins only.",
 		Risk:        Write,
 		Routes:      []string{"POST /migrations/{migration_id}/server-copies"},
 	}, func(ctx context.Context, c *Call, in startServerCopyInput) (*Result, error) {
@@ -522,7 +522,7 @@ func init() {
 				body[k] = v
 			}
 		}
-		return c.writeMove(ctx, "POST", "/migrations/"+in.MigrationID+"/server-copies", body, "Server copy", "Its first pass starts when the agent (or the copy role) is ready; follow it with get_server_copy.")
+		return c.writeMove(ctx, "POST", "/migrations/"+in.MigrationID+"/server-copies", body, "Server copy", "With source agent, the user now runs pantech-migrate-agent run --server-copy <this copy's id> as root on the server, enrolled for the plan's connection; its first pass starts then (with aws_snapshot, once the copy role is ready). Follow it with get_server_copy.")
 	})
 
 	add(Spec{
@@ -611,7 +611,7 @@ func init() {
 
 	add(Spec{
 		Name: "start_database_import", Title: "Import a database from a plan",
-		Description: "Start moving one of a plan's databases into one of the user's Pantech databases (same engine, created first), through the Pantech Migrate agent running in the user's network: the agent reads the source with credentials that stay on it and are never sent to Pantech or through a tool. It checks the source against the destination first and reports what to fix. dump copies once (stop writes to the source first); replicate (PostgreSQL) keeps following changes until the cut-over. The target database must be empty. The move is free; the destination bills as usual. At most 3 imports in progress. Owners and admins only.",
+		Description: "Start moving one of a plan's databases into one of the user's Pantech databases (same engine, created first), through the Pantech Migrate agent running in the user's network, on any cloud: the agent reads the source with credentials that stay on it and are never sent to Pantech or through a tool. The user names the source in the agent's configuration file (database_sources, with the connection string in an environment variable, dsn_env, or a file only the agent's user can read, dsn_file), and source_ref is that name. The agent runs pg_dump or mysqldump, so it must be the agent program on a host that has them, not the container image. It checks the source against the destination first and reports what to fix. dump copies once (stop writes to the source first); replicate (PostgreSQL) keeps following changes until the cut-over. The target database must be empty. The move is free; the destination bills as usual. At most 3 imports in progress. Owners and admins only.",
 		Risk:        Write,
 		Routes:      []string{"POST /migrations/{migration_id}/database-imports"},
 	}, func(ctx context.Context, c *Call, in startDatabaseImportInput) (*Result, error) {
@@ -701,7 +701,7 @@ func init() {
 
 	add(Spec{
 		Name: "start_kubernetes_move", Title: "Start a Kubernetes move",
-		Description: "Start moving a plan's kubernetes_cluster item into one of the organization's running Pantech clusters. The user's Pantech Migrate agent exports the source cluster with the read-only access from get_kubernetes_move_source_access; the source credential never leaves the agent. Nothing is applied yet: get_kubernetes_move shows the report, then preview_kubernetes_move and apply_kubernetes_move. Secrets move only with include_secrets, volume data only with copy_volumes. The move is free; the cluster bills as usual. At most 5 active moves, one per cluster. Owners and admins only.",
+		Description: "Start moving a plan's kubernetes_cluster item into one of the organization's running Pantech clusters. The user's Pantech Migrate agent, enrolled for the plan's connection on any cloud, exports the source cluster with the read-only access from get_kubernetes_move_source_access, from the kubeconfig named under kubernetes in its configuration file; the source credential never leaves the agent. Volume copy pods run only Pantech's copier image (ghcr.io/pantech-dynamics/pantech-migrate-copier), which the source cluster must be able to pull. Nothing is applied yet: get_kubernetes_move shows the report, then preview_kubernetes_move and apply_kubernetes_move. Secrets move only with include_secrets, volume data only with copy_volumes. The move is free; the cluster bills as usual. At most 5 active moves, one per cluster. Owners and admins only.",
 		Risk:        Write,
 		Routes:      []string{"POST /migrations/{migration_id}/kubernetes-moves"},
 	}, func(ctx context.Context, c *Call, in startKubernetesMoveInput) (*Result, error) {
