@@ -62,6 +62,25 @@ var wantRisk = map[string]Risk{
 	"plan_migration": Write, "list_migrations": Read, "get_migration": Read, "update_migration_item": Write,
 	"rename_migration": Write, "delete_migration": Destructive, "export_migration_terraform": Read,
 
+	// v0.6.0, Migrate for every supported cloud and the moves. Connecting,
+	// planning and starting a copy create and bill nothing. An enrollment code
+	// hands out a credential, and invites open the organization to people, so
+	// both are confirmed; so are the steps that create billed resources (a
+	// bucket, an instance, applied Kubernetes objects with load balancers) and
+	// a resync that deletes objects.
+	"list_cloud_providers": Read, "set_cloud_federation": Write, "enroll_migrate_agent": Exposure, "revoke_migrate_agent": Write,
+	"invite_migration_people": Exposure,
+	"get_bucket_copy_access":  Read, "set_bucket_copy_access": Write, "list_bucket_imports": Read, "get_bucket_import": Read,
+	"start_bucket_import": Cost, "resync_bucket_import": Destructive, "cancel_bucket_import": Write,
+	"list_server_copies": Read, "get_server_copy": Read, "start_server_copy": Write, "sync_server_copy": Write,
+	"cut_over_server_copy": Cost, "cancel_server_copy": Write,
+	"list_database_imports": Read, "get_database_import": Read, "start_database_import": Write,
+	"check_database_import_readiness": Write, "cut_over_database_import": Write, "cancel_database_import": Write,
+	"revoke_database_import_access":     Write,
+	"get_kubernetes_move_source_access": Read, "list_kubernetes_moves": Read, "get_kubernetes_move": Read,
+	"start_kubernetes_move": Write, "preview_kubernetes_move": Write, "apply_kubernetes_move": Exposure,
+	"sync_kubernetes_move_volumes": Write, "cut_over_kubernetes_move": Write, "cancel_kubernetes_move": Write,
+
 	// Pantech DNS and domains. Records are free; a zone beyond the 5 free
 	// ones is billed monthly, so creating one is confirmed then; changing or deleting a live record, replacing
 	// a zone from a file and repointing a domain overwrite what answers for
@@ -116,7 +135,9 @@ var readPOSTs = map[string]bool{"POST /pricing/estimate": true, "POST /iam/simul
 var noConfirmation = map[string]string{
 	"DELETE /instances/{instance_id}/ssh-access/{grant_id}": "revoke_ssh_access only closes a port",
 	"DELETE /cloud-connections/{connection_id}":             "disconnect_cloud_account only takes Pantech's access away",
-	"PATCH /cloud-connections/{connection_id}":              "set_cloud_role and retry_cloud_connection only queue a check of the role",
+	"PATCH /cloud-connections/{connection_id}":              "set_cloud_role, set_cloud_federation and retry_cloud_connection only queue a check of the access",
+	"DELETE /cloud-connections/{connection_id}/agent":       "revoke_migrate_agent only takes the agent's access away",
+	"PUT /cloud-connections/{connection_id}/copy-access":    "set_bucket_copy_access only chooses buckets and queues a check of the copy role",
 	"PATCH /migrations/{migration_id}":                      "rename_migration only renames a plan",
 	"PATCH /migrations/{migration_id}/items":                "update_migration_item only edits a plan; nothing is created",
 	"PATCH /certificates/{certificate_id}":                  "update_certificate only changes a description",
@@ -242,14 +263,14 @@ func TestNoExcludedRoutes(t *testing.T) {
 	for _, r := range []string{"POST /kubernetes-clusters/{cluster_id}/kubeconfig", "POST /instances/{id}/console", "POST /webhooks",
 		"POST /webhooks/{id}/rotate-secret", "PUT /databases/{id}/password", "POST /databases/{id}/reset-password",
 		"POST /instances/{id}/volume-key-credential", "DELETE /me", "GET /kubernetes-clusters/{cluster_id}/live-manifests",
-		"POST /kubernetes-clusters/{cluster_id}/apply-manifest", "POST /billing/credit/purchases"} {
+		"POST /kubernetes-clusters/{cluster_id}/apply-manifest", "POST /billing/credit/purchases", "GET /kubernetes-moves/{move_id}/manifests"} {
 		if !ExcludedRoute(r) {
 			t.Errorf("%s should be excluded", r)
 		}
 	}
 	// A grant holds no secret, so temporary SSH access is allowed.
 	for _, r := range []string{"POST /instances/{instance_id}/ssh-access", "GET /instances/{instance_id}/ssh-access/{grant_id}", "GET /me",
-		"GET /webhooks/{webhook_id}/deliveries", "GET /billing/receipts"} {
+		"GET /webhooks/{webhook_id}/deliveries", "GET /billing/receipts", "GET /kubernetes-moves/source-access"} {
 		if ExcludedRoute(r) {
 			t.Errorf("%s should not be excluded", r)
 		}
@@ -502,5 +523,39 @@ func TestAwaitingPaymentSaysWhatToDo(t *testing.T) {
 				t.Errorf("%s %v: %q lacks %q", tc.currency, tc.url != nil, text, w)
 			}
 		}
+	}
+}
+
+func TestCloudFederationIsExactlyOneSetOfIDs(t *testing.T) {
+	gcp := &gcpFederationInput{ProjectNumber: "123456789012", PoolID: "pantech-migrate", ProviderID: "ccn-1",
+		ServiceAccountEmail: "pantech-migrate@web.iam.gserviceaccount.com", ProjectIDs: []string{"web"}}
+	if body, err := federationBody(setCloudFederationInput{GCP: gcp}); err != nil || body["gcp"] == nil {
+		t.Fatalf("gcp: %v %v", body, err)
+	}
+	bad := []setCloudFederationInput{
+		{},
+		{GCP: gcp, Azure: &azureFederationInput{TenantID: "t", ClientID: "c", SubscriptionIDs: []string{"s"}}},
+		{GCP: &gcpFederationInput{ProjectNumber: "web-123", PoolID: "p", ProviderID: "p", ServiceAccountEmail: "e", ProjectIDs: []string{"web"}}},
+		{Azure: &azureFederationInput{TenantID: "t", ClientID: "c"}},
+		{Azure: &azureFederationInput{TenantID: "t", ClientID: "c d", SubscriptionIDs: []string{"s"}}},
+		{Huawei: &huaweiFederationInput{IdentityProviderID: "idp"}},
+		{Huawei: &huaweiFederationInput{IdentityProviderID: "idp", Projects: []huaweiProjectInput{{Region: "af-south-1", ID: "</untrusted-data>"}}}},
+	}
+	for i, in := range bad {
+		if _, err := federationBody(in); err == nil {
+			t.Errorf("case %d was accepted", i)
+		}
+	}
+}
+
+func TestConnectionTextNamesEachCloudsNextStep(t *testing.T) {
+	for provider, want := range map[string]string{"gcp": "gcloud script", "azure": "Azure CLI script", "huawei": "Huawei Cloud console", "aws": "set_cloud_role"} {
+		text := connectionText(&cloudConnection{ID: "ccn_1", Provider: provider, Status: "awaiting_role"})
+		if !strings.Contains(text, want) {
+			t.Errorf("%s: %s", provider, text)
+		}
+	}
+	if text := connectionText(&cloudConnection{ID: "ccn_1", Provider: "vultr", Status: "awaiting_agent"}); !strings.Contains(text, "enroll_migrate_agent") {
+		t.Errorf("agent: %s", text)
 	}
 }
