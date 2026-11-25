@@ -5,8 +5,31 @@ tagged and released (binaries on GitHub, the image on ghcr.io).
 
 ## Unreleased
 
+## v0.6.0 — 2026-11-25
+
 ### Added
 
+- Pantech Migrate for every supported cloud: `list_cloud_providers`; `connect_cloud_account` takes
+  `provider` (aws by default, gcp, azure, huawei, digitalocean, hetzner, linode, vultr, contabo,
+  openstack); `set_cloud_federation` sends what a Google Cloud, Azure or Huawei Cloud setup
+  printed; `enroll_migrate_agent` (two-step; the one-time code is shown once, in the data) and
+  `revoke_migrate_agent` for clouds read by the Pantech Migrate agent. Connections show their
+  provider, permissions and agent; scans show who ran them.
+- `invite_migration_people` (two-step) invites a plan's people with their roles.
+- Bucket imports: `get_bucket_copy_access`, `set_bucket_copy_access`, `list_bucket_imports`,
+  `get_bucket_import`, `start_bucket_import` (two-step), `resync_bucket_import` (two-step with
+  `mirror_deletes`, which needs Manage and delete access) and `cancel_bucket_import`.
+- Server copies: `list_server_copies`, `get_server_copy`, `start_server_copy`, `sync_server_copy`,
+  `cut_over_server_copy` (two-step: it creates a billed instance) and `cancel_server_copy`.
+- Database imports: `list_database_imports`, `get_database_import`, `start_database_import`,
+  `check_database_import_readiness`, `cut_over_database_import`, `cancel_database_import` and
+  `revoke_database_import_access`. Database logins stay on the agent; `source_ref` only names one.
+- Kubernetes moves: `get_kubernetes_move_source_access`, `list_kubernetes_moves`,
+  `get_kubernetes_move`, `start_kubernetes_move`, `preview_kubernetes_move`,
+  `apply_kubernetes_move` (two-step: it can publish load balancers), `sync_kubernetes_move_volumes`,
+  `cut_over_kubernetes_move` (only with `source_writes_stopped`) and `cancel_kubernetes_move`. A
+  move's transformed manifests are an excluded route.
+- `update_migration_item` takes `allow_version_downgrade` for a Kubernetes cluster.
 - Windows Server instances. `get_remote_desktop` gives a Windows instance's address, port and
   user. A Windows VM is created in the console, where the user types its Administrator password
   (and can reset it later): `create_instance` refuses a Windows image and says so, since a
@@ -14,6 +37,9 @@ tagged and released (binaries on GitHub, the image on ghcr.io).
 
 ### Changed
 
+- Built on pantech-go v0.6.0.
+- The server's instructions, `scan_cloud_account` (its USD 0.01 is for AWS only) and the plan's
+  summary describe every supported cloud and the moves.
 - The domain tools and the server's instructions name the Domain Registration Agreement and
   link it (https://pantechdynamics.com/legal/domain-registration): `register_domain` and `transfer_domain` previews say confirming
   accepts it.

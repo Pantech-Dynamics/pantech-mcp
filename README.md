@@ -99,7 +99,8 @@ or credentials file that other users can write, and an API URL that is not https
 | Databases | `list_databases`, `get_database`, `create_database` ★, `get_database_order`, `start_database`, `stop_database`, `resize_database_storage` ★, `update_database_access_rules` ★, `list_database_snapshots`, `create_database_snapshot` ★, `delete_database` ★ |
 | Kubernetes | `list_kubernetes_clusters`, `get_kubernetes_cluster`, `list_kubernetes_versions`, `create_kubernetes_cluster` ★, `resize_kubernetes_node_plan` ★, `start_kubernetes_cluster`, `stop_kubernetes_cluster`, `delete_kubernetes_cluster` ★, `list_node_pools`, `create_node_pool` ★, `scale_node_pool` ★, `delete_node_pool` ★, `list_kubernetes_addons`, `toggle_kubernetes_addon` ★, `list_cluster_nodes`, `list_cluster_workloads` |
 | Inside an instance | `get_instance_agent`, `enable_instance_agent` ★, `start_tools_session`, `run_in_instance`, `read_instance_file`, `write_instance_file`, `list_instance_dir`, `get_agent_tool_call`, `list_agent_sessions`, `get_agent_session`, `list_agent_session_events`, `end_agent_session`, `get_agent_session_report` |
-| Migrate (from AWS) | `connect_cloud_account`, `list_cloud_connections`, `get_cloud_connection`, `set_cloud_role`, `retry_cloud_connection`, `disconnect_cloud_account`, `scan_cloud_account` ★, `list_cloud_scans`, `get_cloud_scan`, `plan_migration`, `list_migrations`, `get_migration`, `update_migration_item`, `rename_migration`, `delete_migration` ★, `export_migration_terraform` |
+| Migrate | `list_cloud_providers`, `connect_cloud_account`, `list_cloud_connections`, `get_cloud_connection`, `set_cloud_role`, `set_cloud_federation`, `enroll_migrate_agent` ★, `revoke_migrate_agent`, `retry_cloud_connection`, `disconnect_cloud_account`, `scan_cloud_account` ★, `list_cloud_scans`, `get_cloud_scan`, `plan_migration`, `list_migrations`, `get_migration`, `update_migration_item`, `rename_migration`, `delete_migration` ★, `export_migration_terraform`, `invite_migration_people` ★ |
+| Migrate: moves | `get_bucket_copy_access`, `set_bucket_copy_access`, `list_bucket_imports`, `get_bucket_import`, `start_bucket_import` ★, `resync_bucket_import` (★ with `mirror_deletes`), `cancel_bucket_import`, `list_server_copies`, `get_server_copy`, `start_server_copy`, `sync_server_copy`, `cut_over_server_copy` ★, `cancel_server_copy`, `list_database_imports`, `get_database_import`, `start_database_import`, `check_database_import_readiness`, `cut_over_database_import`, `cancel_database_import`, `revoke_database_import_access`, `get_kubernetes_move_source_access`, `list_kubernetes_moves`, `get_kubernetes_move`, `start_kubernetes_move`, `preview_kubernetes_move`, `apply_kubernetes_move` ★, `sync_kubernetes_move_volumes`, `cut_over_kubernetes_move`, `cancel_kubernetes_move` |
 | DNS | `list_dns_zones`, `get_dns_zone`, `create_dns_zone` (★ beyond 5 free zones), `verify_dns_zone`, `delete_dns_zone` ★, `list_dns_records`, `create_dns_record`, `update_dns_record` ★, `delete_dns_record` ★, `import_dns_zone` (★ with `replace`), `export_dns_zone` |
 | Domains | `list_domain_tlds`, `search_domains`, `check_domain_transfer`, `list_domains`, `get_domain`, `register_domain` ★, `transfer_domain` ★, `renew_domain` ★, `update_domain_settings` (★ when turning something off), `set_domain_name_servers` ★, `get_domain_contact`, `update_domain_contact` ★, `get_domain_auth_code` ★, `list_domain_orders`, `get_domain_order`, `retry_domain_order_payment` ★ |
 | Container Registry | `get_registry_namespace`, `set_registry_namespace` ★, `list_registry_repositories`, `create_registry_repository` (★ when public), `get_registry_repository`, `update_registry_repository` (★ when it makes the repository public, turns immutable tags off or sets retention), `delete_registry_repository` ★, `list_registry_tags`, `get_registry_tag`, `delete_registry_tag` ★, `list_registry_tokens`, `create_registry_token` ★, `revoke_registry_token` ★ |
@@ -134,15 +135,31 @@ approve it in the console, under the session: an AI app cannot approve its own s
 returned as data, cut to its last 16 KiB. You see every step in the console and can end the
 session at any time.
 
-The Migrate tools plan a move from an AWS account. Your AI app only guides you: Pantech reads the
-account itself, through a read-only role you create in it from the link `connect_cloud_account`
-returns (the role's template is also saved by `pantech migrate connect` in the CLI, and returned by the
-API on the connection; Migrate is not in the Pantech console yet), and you never give the app
-or Pantech access keys, only the role's ARN. A scan costs USD 0.01 on your AWS bill for reading
-spend, so it is two-step. A plan maps what the scan found to Pantech, flags what cannot move yet
-and compares Pantech's monthly price with your current bill; nothing is created until you export
-it with `export_migration_terraform` and apply the Terraform yourself. Copying servers is not
-available yet.
+The Migrate tools plan and carry out a move from another cloud. Your AI app only guides you:
+Pantech reads the other account itself, read only, and you never give the app or Pantech access
+keys, tokens or passwords.
+
+- **AWS**: a read-only role you create from the link `connect_cloud_account` returns; you share
+  only the role's ARN.
+- **Google Cloud, Azure, Huawei Cloud**: you run the connection's setup (a gcloud script, an Azure
+  CLI script, or console steps) and share the ids it printed (`set_cloud_federation`).
+- **DigitalOcean, Hetzner, Linode, Vultr, Contabo, OpenStack**: you run the Pantech Migrate agent
+  on your own machine with a read-only token that never leaves it. `enroll_migrate_agent` (two-step)
+  gives a one-time command to enroll it; `revoke_migrate_agent` ends it.
+
+The setups are also saved by `pantech migrate connect` in the CLI and returned by the API on the
+connection; Migrate is not in the Pantech console yet. A scan of an AWS account costs USD 0.01 on
+your AWS bill for reading spend, so scans are two-step. A plan maps what the scan found to Pantech,
+flags what cannot move yet and compares Pantech's monthly price with your current bill; nothing is
+created by a plan. Export it with `export_migration_terraform`, or move it item by item: people
+(`invite_migration_people`), buckets (`set_bucket_copy_access`, then `start_bucket_import`),
+servers (`start_server_copy`, `sync_server_copy`, then `cut_over_server_copy`, which creates the
+billed instance), databases (`start_database_import`, through the agent, whose database logins
+stay on it) and Kubernetes clusters (`start_kubernetes_move`, `preview_kubernetes_move`,
+`apply_kubernetes_move`, `cut_over_kubernetes_move`). Every move is free; what it creates bills as
+usual, and the steps that create billed resources, open access or delete data are two-step. A
+Kubernetes move's transformed manifests are never fetched by a tool: download them with the CLI or
+the API.
 
 The DNS tools manage zones and records on Pantech DNS, on Pantech's own name servers. Each zone
 gets its own two name servers; it is served once the domain's registrar delegates to exactly them,

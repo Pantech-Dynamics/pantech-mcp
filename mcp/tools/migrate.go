@@ -9,44 +9,76 @@ import (
 	"time"
 )
 
-// Pantech Migrate plans a move from another cloud (AWS for now) to Pantech.
-// The AI app only guides: Pantech's own engine does all the reading, through
-// a read-only role the user creates in their own account, which only Pantech
-// can assume, with short-lived tokens. No tool here takes or returns cloud
-// access keys, and the role's template is left out of results (the user
-// opens the one-click link, or gets the template with `pantech migrate connect`
-// in the CLI or from the connection in the API; Migrate is not in the
-// console yet). Names,
-// tags and everything a scan found are the customer's own text, so they go
-// only in the fenced data. Copying servers is not available yet: a plan is
-// reviewed, edited and exported as Terraform.
+// Pantech Migrate plans a move from another cloud to Pantech. The AI app only
+// guides: Pantech's own engine does all the reading, read only. AWS, Google
+// Cloud, Azure and Huawei Cloud trust short-lived tokens Pantech signs for one
+// connection (the user runs a setup in their own account); DigitalOcean,
+// Hetzner, Linode, Vultr, Contabo and OpenStack are read by the Pantech
+// Migrate agent, which the user runs with a read-only token that stays on
+// their machine. No tool here takes or returns cloud access keys or tokens,
+// and the setup's template is left out of results (the user opens the
+// one-click link, or gets the setup with `pantech migrate connect` in the CLI
+// or from the connection in the API; Migrate is not in the console yet).
+// Names, tags and everything a scan found are the customer's own text, so
+// they go only in the fenced data. A plan is reviewed, edited and exported as
+// Terraform, or moved with the tools in migrate_moves.go.
 
 type cloudFailure struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
 }
 
-// cloudSetup is a connection's setup without its template: the template is a
-// long document the user does not need to see in the conversation.
+// cloudSetup is a connection's setup without its template and the contents
+// of its further files: they are long documents the user does not need to
+// see in the conversation.
 type cloudSetup struct {
-	IssuerURL      string  `json:"issuer_url"`
-	Audience       string  `json:"audience"`
-	Subject        string  `json:"subject"`
-	QuickCreateURL *string `json:"quick_create_url"`
+	Access         string           `json:"access,omitempty"`
+	IssuerURL      *string          `json:"issuer_url"`
+	Audience       *string          `json:"audience"`
+	Subject        string           `json:"subject"`
+	QuickCreateURL *string          `json:"quick_create_url"`
+	TemplateFormat string           `json:"template_format,omitempty"`
+	Files          []cloudSetupFile `json:"files,omitempty"`
+	Permissions    []string         `json:"permissions,omitempty"`
+	Agent          *cloudAgentSetup `json:"agent,omitempty"`
+}
+
+// cloudSetupFile is a further setup file, by name only.
+type cloudSetupFile struct {
+	Name string `json:"name"`
+}
+
+// cloudAgentSetup is how to run the Pantech Migrate agent. It holds no
+// secret: the enrollment command has a placeholder where the one-time code
+// goes, and the provider token is read from the user's own environment.
+type cloudAgentSetup struct {
+	Image            string   `json:"image"`
+	DownloadURL      *string  `json:"download_url"`
+	APIURL           string   `json:"api_url"`
+	TokenVariables   []string `json:"token_variables"`
+	TokenHowTo       string   `json:"token_how_to"`
+	EnrollCommand    string   `json:"enroll_command"`
+	RunCommand       string   `json:"run_command"`
+	ContainerCommand string   `json:"container_command"`
 }
 
 type cloudConnection struct {
-	ID           string        `json:"id"`
-	Provider     string        `json:"provider"`
-	Name         string        `json:"name"`
-	Status       string        `json:"status"`
-	Failure      *cloudFailure `json:"failure"`
-	RoleARN      *string       `json:"role_arn"`
-	AWSAccountID *string       `json:"aws_account_id"`
-	VerifiedAt   *string       `json:"verified_at"`
-	CreatedAt    string        `json:"created_at"`
-	UpdatedAt    string        `json:"updated_at"`
-	Setup        cloudSetup    `json:"setup"`
+	ID                string        `json:"id"`
+	Provider          string        `json:"provider"`
+	Name              string        `json:"name"`
+	Status            string        `json:"status"`
+	Failure           *cloudFailure `json:"failure"`
+	RoleARN           *string       `json:"role_arn"`
+	AWSAccountID      *string       `json:"aws_account_id"`
+	ExternalAccountID *string       `json:"external_account_id,omitempty"`
+	GCP               any           `json:"gcp,omitempty"`
+	Azure             any           `json:"azure,omitempty"`
+	Huawei            any           `json:"huawei,omitempty"`
+	Agent             any           `json:"agent,omitempty"`
+	VerifiedAt        *string       `json:"verified_at"`
+	CreatedAt         string        `json:"created_at"`
+	UpdatedAt         string        `json:"updated_at"`
+	Setup             cloudSetup    `json:"setup"`
 }
 
 type cloudCostMonth struct {
@@ -63,6 +95,8 @@ type cloudCost struct {
 type cloudScan struct {
 	ID           string         `json:"id"`
 	ConnectionID string         `json:"connection_id"`
+	Runner       string         `json:"runner,omitempty"`
+	Provider     *string        `json:"provider,omitempty"`
 	Status       string         `json:"status"`
 	Failure      *cloudFailure  `json:"failure"`
 	CreatedAt    string         `json:"created_at"`
@@ -133,7 +167,8 @@ type terraformFile struct {
 }
 
 type connectCloudAccountInput struct {
-	Name string `json:"name" jsonschema:"A name for the connection, 1 to 100 characters, e.g. 'Production AWS'."`
+	Name     string `json:"name" jsonschema:"A name for the connection, 1 to 100 characters, e.g. 'Production AWS'."`
+	Provider string `json:"provider,omitempty" jsonschema:"The cloud to connect, from list_cloud_providers: aws (the default), gcp, azure, huawei, digitalocean, hetzner, linode, vultr, contabo or openstack."`
 }
 
 type cloudConnectionInput struct {
@@ -152,7 +187,7 @@ type scanCloudAccountInput struct {
 
 type getCloudScanInput struct {
 	ScanID           string `json:"scan_id" jsonschema:"The scan's id, e.g. csn_…, from scan_cloud_account or list_cloud_scans."`
-	IncludeInventory bool   `json:"include_inventory,omitempty" jsonschema:"Also return every item the scan found (servers, disks, networks, firewall groups, addresses, load balancers, databases, bucket names, users, SSH keys). Large; leave it out for the counts and spend."`
+	IncludeInventory bool   `json:"include_inventory,omitempty" jsonschema:"Also return every item the scan found (servers, disks, networks, firewall groups, addresses, load balancers, databases, bucket names, Kubernetes clusters, people, SSH keys). Large; leave it out for the counts and spend."`
 }
 
 type planMigrationInput struct {
@@ -184,9 +219,27 @@ type updateMigrationItemInput struct {
 	CIDR        string `json:"cidr,omitempty" jsonschema:"An address range, for a network or subnet, e.g. 10.0.0.0/16."`
 	Role        string `json:"role,omitempty" jsonschema:"member or admin, for a person."`
 	Email       string `json:"email,omitempty" jsonschema:"The person's email address, for a person."`
+	// AllowVersionDowngrade is the user's consent, never the model's choice.
+	AllowVersionDowngrade *bool `json:"allow_version_downgrade,omitempty" jsonschema:"For a Kubernetes cluster: true only when the user agreed to run a lower Kubernetes version on Pantech than the source runs."`
 }
 
-const migrateGuide = "Pantech reads the other cloud itself, through a read-only role the user creates in their own account; never ask the user for cloud access keys or secrets."
+const migrateGuide = "Pantech reads the other cloud itself, read only: through a role or identity the user sets up in their own account, or through the Pantech Migrate agent the user runs with a read-only token that never leaves their machine. Never ask the user for cloud access keys, tokens or secrets."
+
+// migrateProviders are the clouds connect_cloud_account accepts.
+var migrateProviders = map[string]bool{
+	"aws": true, "gcp": true, "azure": true, "huawei": true,
+	"digitalocean": true, "hetzner": true, "linode": true, "vultr": true, "contabo": true, "openstack": true,
+}
+
+// agentProviders are the clouds read by the Pantech Migrate agent.
+var agentProviders = map[string]bool{
+	"digitalocean": true, "hetzner": true, "linode": true, "vultr": true, "contabo": true, "openstack": true,
+}
+
+// isAgent reports whether a connection is read by the Pantech Migrate agent.
+func (conn *cloudConnection) isAgent() bool {
+	return conn.Setup.Access == "agent" || agentProviders[conn.Provider]
+}
 
 // roleARNPattern is what an AWS IAM role ARN looks like, in the commercial
 // partition only.
@@ -222,17 +275,32 @@ func (conn *cloudConnection) sanitize() *cloudConnection {
 // consoleFallback is the step when there is no one-click link.
 const consoleFallback = "get this connection's CloudFormation template (the API returns it as setup.template in GET /public/v1/cloud-connections/{connection_id}; or start the connection with `pantech migrate connect` in the Pantech CLI instead, which saves the template to a file) and create a stack from it in the AWS account to move from"
 
+// federatedSetup is the step for Google Cloud, Azure and Huawei Cloud.
+var federatedSetup = map[string]string{
+	"gcp":    "run this connection's gcloud script in Google Cloud Shell or with gcloud signed in to the projects to move from, then share what it printed (project number, pool id, provider id, service account email and the project ids to scan)",
+	"azure":  "run this connection's Azure CLI script signed in to the tenant to move from, then share what it printed (tenant id, client id and the subscription ids to scan)",
+	"huawei": "follow this connection's steps in the Huawei Cloud console (an identity provider, a mapping rule and a read-only policy, from the JSON files the setup gives), then share the identity provider's id and the region projects to scan",
+}
+
+// setupSource says where the user gets a setup that is not shown here.
+const setupSource = "The setup is not shown here: `pantech migrate connect` in the Pantech CLI saves it to files, and the API returns it as setup.template (and setup.files) in GET /public/v1/cloud-connections/{connection_id}."
+
 // connectionText describes a connection's status and the next step.
 func connectionText(conn *cloudConnection) string {
 	switch conn.Status {
 	case "awaiting_role":
+		if step, federated := federatedSetup[conn.Provider]; federated {
+			return fmt.Sprintf("Cloud connection %s is waiting for its setup. The user should %s; then call set_cloud_federation with it. %s", conn.ID, step, setupSource)
+		}
 		step := consoleFallback
 		if link := quickCreateLink(conn.Setup); link != "" {
 			step = "open this link while signed in to the AWS account to move from, and create the stack: " + link
 		}
 		return fmt.Sprintf("Cloud connection %s is waiting for its role. The user should %s. Then send the stack's RoleArn output with set_cloud_role.", conn.ID, step)
+	case "awaiting_agent":
+		return fmt.Sprintf("Cloud connection %s is waiting for its Pantech Migrate agent. The user makes a read-only token as setup.agent.token_how_to in the data says (it stays on their machine; never ask for it), then enroll_migrate_agent gives the one-time enrollment command to run where the agent will run.", conn.ID)
 	case "verifying":
-		return fmt.Sprintf("Cloud connection %s is being checked: Pantech is trying the role, usually within a minute. Call get_cloud_connection again shortly.", conn.ID)
+		return fmt.Sprintf("Cloud connection %s is being checked: Pantech is trying its access, usually within a minute. Call get_cloud_connection again shortly.", conn.ID)
 	case "connected":
 		return fmt.Sprintf("Cloud connection %s is connected. Next: scan_cloud_account.", conn.ID)
 	case "failed":
@@ -270,7 +338,7 @@ func scanText(s *cloudScan) string {
 			money(s.Cost.AverageMonthlyMinor, s.Cost.Currency), plural(len(s.Cost.Months), "month", "months"))
 	}
 	if len(s.Warnings) > 0 {
-		fmt.Fprintf(&b, " %s could not be read (warnings in the data).", plural(len(s.Warnings), "part", "parts"))
+		fmt.Fprintf(&b, " %s could not be read (warnings in the data; some clouds offer no read-only spend or people listing, and then the plan says so).", plural(len(s.Warnings), "part", "parts"))
 	}
 	if len(s.Truncated) > 0 {
 		b.WriteString(" Some kinds were cut at 2,000 items (truncated in the data).")
@@ -325,25 +393,35 @@ func migrationText(m *migration) string {
 		}
 		b.WriteString(" " + exactAmounts)
 	}
-	b.WriteString(" Nothing is created: review and edit the plan (update_migration_item), then export_migration_terraform. Copying servers is not available yet.")
+	b.WriteString(" Nothing is created by the plan itself: review and edit it (update_migration_item), then export_migration_terraform, or move items one by one: invite_migration_people, start_bucket_import, start_server_copy, start_database_import and start_kubernetes_move.")
 	return b.String()
 }
 
 func init() {
 	add(Spec{
-		Name: "connect_cloud_account", Title: "Connect an AWS account to plan a move",
-		Description: "Start a connection to the user's AWS account for Pantech Migrate. Nothing is shared yet: it returns a one-click link that opens AWS's create-stack page, which creates in the user's account a read-only role only Pantech can assume, with short-lived tokens. Give the user the link and the steps (Migrate is not in the Pantech console yet; a user who prefers the CLI can instead connect with `pantech migrate connect`, which saves the template to a file, and the API returns it as setup.template on the connection); then send the stack's RoleArn output with set_cloud_role. " + migrateGuide + " Owners and admins only; at most 10 connections.",
+		Name: "connect_cloud_account", Title: "Connect a cloud account to plan a move",
+		Description: "Start a connection to the user's account in another cloud for Pantech Migrate (list_cloud_providers lists them). Nothing is shared yet. For AWS (the default) it returns a one-click link that opens AWS's create-stack page, which creates in the user's account a read-only role only Pantech can assume, with short-lived tokens; then send the stack's RoleArn output with set_cloud_role. For Google Cloud, Azure and Huawei Cloud the user runs the connection's setup (a gcloud script, an Azure CLI script, or console steps) and shares what it printed, which set_cloud_federation sends. For DigitalOcean, Hetzner, Linode, Vultr, Contabo and OpenStack the user runs the Pantech Migrate agent with a read-only token that stays on their machine: enroll_migrate_agent. Migrate is not in the Pantech console yet; a user who prefers the CLI can instead connect with `pantech migrate connect`, which saves the setup to files, and the API returns it as setup.template on the connection. " + migrateGuide + " Owners and admins only; at most 10 connections.",
 		Risk:        Write,
 		Routes:      []string{"POST /cloud-connections"},
 	}, func(ctx context.Context, c *Call, in connectCloudAccountInput) (*Result, error) {
-		body := map[string]any{"provider": "aws", "name": in.Name}
+		provider := in.Provider
+		if provider == "" {
+			provider = "aws"
+		}
+		if !migrateProviders[provider] {
+			return nil, errorf("provider must be one of aws, gcp, azure, huawei, digitalocean, hetzner, linode, vultr, contabo or openstack (list_cloud_providers says which are available).")
+		}
+		body := map[string]any{"provider": provider, "name": in.Name}
 		var conn cloudConnection
 		if err := c.Client.Do(ctx, "POST", "/cloud-connections", nil, body, &conn, c.writeOpts()...); err != nil {
 			return nil, err
 		}
+		conn.sanitize()
+		if provider != "aws" {
+			return ok(fmt.Sprintf("Started cloud connection %s. %s %s", arg(conn.ID), connectionText(&conn), migrateGuide), conn)
+		}
 		var b strings.Builder
 		fmt.Fprintf(&b, "Started cloud connection %s. Give the user these steps:\n", arg(conn.ID))
-		conn.sanitize()
 		if link := quickCreateLink(conn.Setup); link != "" {
 			fmt.Fprintf(&b, "1. Open this link while signed in to the AWS account to move from: %s\n", link)
 		} else {
@@ -357,7 +435,7 @@ func init() {
 
 	add(Spec{
 		Name: "list_cloud_connections", Title: "List cloud connections",
-		Description: "List the organization's connections to other cloud accounts for Pantech Migrate, newest first, with each one's status (awaiting_role, verifying, connected or failed).",
+		Description: "List the organization's connections to other cloud accounts for Pantech Migrate, newest first, with each one's provider and status (awaiting_role, awaiting_agent, verifying, connected or failed).",
 		Risk:        Read, Idempotent: true,
 		Routes: []string{"GET /cloud-connections"},
 	}, func(ctx context.Context, c *Call, _ noInput) (*Result, error) {
@@ -375,7 +453,7 @@ func init() {
 
 	add(Spec{
 		Name: "get_cloud_connection", Title: "Get a cloud connection",
-		Description: "Get a cloud connection: its status (awaiting_role until set_cloud_role, verifying while Pantech tries the role, then connected or failed with a message saying what to do), the AWS account it reaches, and its one-click setup link.",
+		Description: "Get a cloud connection: its status (awaiting_role until set_cloud_role or set_cloud_federation, awaiting_agent until the Pantech Migrate agent enrolls, verifying while Pantech tries its access, then connected or failed with a message saying what to do), the account it reaches, its agent, the permissions its setup grants, and, for AWS, its one-click setup link.",
 		Risk:        Read, Idempotent: true,
 		Routes: []string{"GET /cloud-connections/{connection_id}"},
 	}, func(ctx context.Context, c *Call, in cloudConnectionInput) (*Result, error) {
@@ -406,7 +484,7 @@ func init() {
 
 	add(Spec{
 		Name: "retry_cloud_connection", Title: "Check a cloud connection again",
-		Description: "Check a failed cloud connection's role again, after the user fixed what its failure message said (this waits for the check, usually under a minute).",
+		Description: "Check a failed cloud connection's access again, after the user fixed what its failure message said (this waits for the check, usually under a minute).",
 		Risk:        Write, Idempotent: true,
 		Routes: []string{"PATCH /cloud-connections/{connection_id}", "GET /cloud-connections/{connection_id}"},
 	}, func(ctx context.Context, c *Call, in cloudConnectionInput) (*Result, error) {
@@ -418,7 +496,7 @@ func init() {
 
 	add(Spec{
 		Name: "disconnect_cloud_account", Title: "Disconnect a cloud account",
-		Description: "Remove a cloud connection and its scans from Pantech; migration plans made from it stay. It only takes access away, so Manage access is enough. To revoke access on the AWS side too, the user deletes the stack in their AWS account.",
+		Description: "Remove a cloud connection and its scans from Pantech; migration plans made from it stay, and its agent's access ends. It only takes access away, so Manage access is enough. To revoke access in the other cloud too, the user removes what the setup created there (the AWS stack, the Google Cloud pool, the Azure app registration, the Huawei Cloud identity provider, or the agent's token).",
 		Risk:        Write, Idempotent: true,
 		Routes: []string{"DELETE /cloud-connections/{connection_id}"},
 	}, func(ctx context.Context, c *Call, in cloudConnectionInput) (*Result, error) {
@@ -428,13 +506,13 @@ func init() {
 		if err := c.Client.Do(ctx, "DELETE", "/cloud-connections/"+in.ConnectionID, nil, nil, nil, c.writeOpts()...); err != nil {
 			return nil, err
 		}
-		return ok(fmt.Sprintf("Cloud connection %s is disconnected: Pantech no longer uses its role. To remove the role from the AWS account too, the user deletes the stack there.", in.ConnectionID),
+		return ok(fmt.Sprintf("Cloud connection %s is disconnected: Pantech no longer uses its access. To remove that access in the other cloud too, the user removes what the setup created there (for AWS, the stack).", in.ConnectionID),
 			map[string]any{"connection_id": in.ConnectionID, "status": "disconnected"})
 	})
 
 	addConfirmed(Spec{
 		Name: "scan_cloud_account", Title: "Scan a connected cloud account",
-		Description: "Have Pantech read everything a connected account's role can see (servers, disks, networks, firewall groups, public addresses, load balancers, databases, bucket names, users, SSH keys) and the last three months of spend, in every enabled region. Reading spend costs USD 0.01 on the user's AWS bill (charged by AWS, not Pantech). Waits up to a minute; most accounts take under five, so follow it with get_cloud_scan.",
+		Description: "Have Pantech read everything a connected account's access can see (servers, disks, networks, firewall groups, public addresses, load balancers, databases, bucket names, Kubernetes clusters, people, SSH keys) and the last three months of spend where the cloud offers it read only, in every enabled region. For AWS, reading spend costs USD 0.01 on the user's AWS bill (charged by AWS, not Pantech); Pantech charges nothing for a scan. An agent connection's scan is run by the user's Pantech Migrate agent, and fails agent_offline when no agent picks it up within an hour. Waits up to a minute; most accounts take under five, so follow it with get_cloud_scan.",
 		Risk:        Cost,
 		Routes:      []string{"GET /cloud-connections/{connection_id}", "POST /cloud-connections/{connection_id}/scans", "GET /cloud-scans/{scan_id}"},
 	}, func(ctx context.Context, c *Call, in scanCloudAccountInput) (*Preview, error) {
@@ -447,14 +525,20 @@ func init() {
 		}
 		p := &Preview{
 			Action: fmt.Sprintf("Scan the cloud account behind connection %s: Pantech reads its resources and the last three months of spend, read only, in every enabled region.", conn.ID),
-			Price:  "USD 0.01 on the user's AWS bill, charged by AWS for reading spend (Pantech charges nothing for the scan)",
+			Price:  "Pantech charges nothing for the scan",
 			Warnings: []string{
-				"Nothing is changed in the AWS account; the role can only read.",
+				"Nothing is changed in the other cloud; the access can only read.",
 			},
 			Data: map[string]any{"connection": conn},
 		}
+		if conn.Provider == "aws" || conn.Provider == "" {
+			p.Price = "USD 0.01 on the user's AWS bill, charged by AWS for reading spend (Pantech charges nothing for the scan)"
+		}
+		if conn.isAgent() {
+			p.Warnings = append(p.Warnings, "The user's Pantech Migrate agent runs this scan: it must be running, or the scan fails agent_offline after an hour.")
+		}
 		if conn.Status != "connected" {
-			p.Warnings = append(p.Warnings, "The connection is not connected yet: finish set_cloud_role first, or Pantech refuses.")
+			p.Warnings = append(p.Warnings, "The connection is not connected yet: finish its setup (set_cloud_role, set_cloud_federation or enroll_migrate_agent) first, or Pantech refuses.")
 		}
 		return p, nil
 	}, func(ctx context.Context, c *Call, in scanCloudAccountInput) (*Result, error) {
@@ -497,7 +581,7 @@ func init() {
 
 	add(Spec{
 		Name: "get_cloud_scan", Title: "Get a cloud scan",
-		Description: "Get a scan: its status (queued, running, succeeded or failed), what it found per kind, the regions read, the source account's monthly spend, and the parts it could not read. include_inventory adds every item found; names and tags in it are the user's own text, shown as data.",
+		Description: "Get a scan: its status (queued, running, succeeded or failed), who ran it (Pantech, or the user's agent), what it found per kind, the regions read, the source account's monthly spend, and the parts it could not read. include_inventory adds every item found; names and tags in it are the user's own text, shown as data.",
 		Risk:        Read, Idempotent: true,
 		Routes: []string{"GET /cloud-scans/{scan_id}"},
 	}, func(ctx context.Context, c *Call, in getCloudScanInput) (*Result, error) {
@@ -513,7 +597,7 @@ func init() {
 
 	add(Spec{
 		Name: "plan_migration", Title: "Plan a migration from a scan",
-		Description: "Build a migration plan from a scan that succeeded: each server, disk, network, firewall group, database, key and person mapped to its Pantech equivalent and sized against today's plans, with anything that cannot move yet flagged and explained, and Pantech's monthly price next to the source bill. Nothing is created or billed: the plan is to review, edit (update_migration_item) and export (export_migration_terraform). At most 25 plans.",
+		Description: "Build a migration plan from a scan that succeeded: each server, disk, network, firewall group, database, bucket, Kubernetes cluster, key and person mapped to its Pantech equivalent and sized against today's plans, with anything that cannot move yet flagged and explained (a Windows server is planned on Windows Server where the organization has it, else flagged windows_on_request), and Pantech's monthly price next to the source bill. Nothing is created or billed: the plan is to review, edit (update_migration_item), export (export_migration_terraform) or move item by item. At most 25 plans.",
 		Risk:        Write,
 		Routes:      []string{"POST /migrations"},
 	}, func(ctx context.Context, c *Call, in planMigrationInput) (*Result, error) {
@@ -564,7 +648,7 @@ func init() {
 
 	add(Spec{
 		Name: "update_migration_item", Title: "Edit an item of a migration plan",
-		Description: "Change one item of a plan, named by its key from get_migration: leave it out (excluded), choose another plan (plan_slug, for servers and databases), a size (storage_gb, for disks and databases), an address range (cidr, for networks and subnets), or a person's role and email. Items flagged as unsupported stay unsupported. Only the plan changes; nothing is created.",
+		Description: "Change one item of a plan, named by its key from get_migration: leave it out (excluded), choose another plan (plan_slug, for servers and databases), a size (storage_gb, for disks and databases), an address range (cidr, for networks and subnets), a person's role and email, or, for a Kubernetes cluster, the user's consent to a lower Kubernetes version (allow_version_downgrade). Items flagged as unsupported stay unsupported. Only the plan changes; nothing is created.",
 		Risk:        Write, Idempotent: true,
 		Routes: []string{"PATCH /migrations/{migration_id}/items"},
 	}, func(ctx context.Context, c *Call, in updateMigrationItemInput) (*Result, error) {
@@ -599,8 +683,11 @@ func init() {
 		if in.Email != "" {
 			body["email"] = in.Email
 		}
+		if in.AllowVersionDowngrade != nil {
+			body["allow_version_downgrade"] = *in.AllowVersionDowngrade
+		}
 		if len(body) == 1 {
-			return nil, errorf("Nothing to change: give excluded, plan_slug, storage_gb, cidr, role or email.")
+			return nil, errorf("Nothing to change: give excluded, plan_slug, storage_gb, cidr, role, email or allow_version_downgrade.")
 		}
 		var m migration
 		if err := c.Client.Do(ctx, "PATCH", "/migrations/"+in.MigrationID+"/items", nil, body, &m, c.writeOpts()...); err != nil {
@@ -656,7 +743,7 @@ func init() {
 
 	add(Spec{
 		Name: "export_migration_terraform", Title: "Export a migration plan as Terraform",
-		Description: "Export a migration plan's planned items as Terraform for the Pantech provider: main.tf and variables.tf. Values Pantech cannot know (the image, an SSH key, disk offerings, database passwords) are variables without defaults. Give the user the files to review, then run terraform plan. This is how a plan is carried out for now: copying servers is not available yet.",
+		Description: "Export a migration plan's planned items as Terraform for the Pantech provider: main.tf and variables.tf. Values Pantech cannot know (the image, an SSH key, disk offerings, database passwords) are variables without defaults. Give the user the files to review, then run terraform plan. Terraform builds empty resources; to carry data over, use the move tools (start_bucket_import, start_server_copy, start_database_import, start_kubernetes_move).",
 		Risk:        Read, Idempotent: true,
 		Routes: []string{"GET /migrations/{migration_id}/terraform"},
 	}, func(ctx context.Context, c *Call, in migrationInput) (*Result, error) {
@@ -698,8 +785,8 @@ func (c *Call) getScan(ctx context.Context, id string, inventory bool) (*cloudSc
 	return &s, nil
 }
 
-// updateConnection sends a role ARN or a retry, then waits, within the wait
-// budget, for Pantech's check of the role to finish.
+// updateConnection sends a role ARN, a federation or a retry, then waits,
+// within the wait budget, for Pantech's check of the access to finish.
 func (c *Call) updateConnection(ctx context.Context, id string, body map[string]any) (*Result, error) {
 	var conn cloudConnection
 	if err := c.Client.Do(ctx, "PATCH", "/cloud-connections/"+id, nil, body, &conn, c.writeOpts()...); err != nil {
