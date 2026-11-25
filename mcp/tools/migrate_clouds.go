@@ -56,7 +56,7 @@ type setCloudFederationInput struct {
 }
 
 type enrollMigrateAgentInput struct {
-	ConnectionID string `json:"connection_id" jsonschema:"An agent connection's id (DigitalOcean, Hetzner, Linode, Vultr, Contabo or OpenStack), e.g. ccn_…"`
+	ConnectionID string `json:"connection_id" jsonschema:"The connection's id, e.g. ccn_…: any connection may have an agent."`
 	Confirmation
 }
 
@@ -207,7 +207,7 @@ func init() {
 
 	addConfirmed(Spec{
 		Name: "enroll_migrate_agent", Title: "Enroll a Pantech Migrate agent",
-		Description: "For a connection read by the Pantech Migrate agent (DigitalOcean, Hetzner, Linode, Vultr, Contabo, OpenStack): issue a one-time enrollment code and the command that uses it. The code is shown once, in this tool's result, works once and for an hour; give it only to the user, who runs the command on the machine where the agent will run, with their read-only provider token in its environment (the token never leaves that machine; never ask for it). Issuing a code replaces any unused one, and redeeming it replaces the connection's earlier agent. Owners and admins only.",
+		Description: "Issue a one-time enrollment code for a connection's Pantech Migrate agent, and the command that uses it. Any connection may have an agent. On DigitalOcean, Hetzner, Linode, Vultr, Contabo and OpenStack it scans, with the user's read-only provider token in its environment. On AWS, Google Cloud, Azure and Huawei Cloud Pantech scans itself, and the agent (which needs no provider token there) runs the copy steps that read from inside the user's network: server copies, database imports and Kubernetes moves. A connection has one agent: redeeming a code replaces the connection's earlier agent, so enrolling one on a server to copy it replaces the long-running agent until the user enrolls that one again. The code is shown once, in this tool's result, works once and for an hour; give it only to the user, who runs the command on the machine where the agent will run (tokens, database connection strings and kubeconfigs stay on that machine; never ask for them). Issuing a code replaces any unused one. Owners and admins only.",
 		Risk:        Exposure,
 		Routes:      []string{"GET /cloud-connections/{connection_id}", "POST /cloud-connections/{connection_id}/agent-enrollments"},
 	}, func(ctx context.Context, c *Call, in enrollMigrateAgentInput) (*Preview, error) {
@@ -222,12 +222,12 @@ func init() {
 			Action: fmt.Sprintf("Issue a one-time enrollment code for the Pantech Migrate agent of connection %s. Whoever runs it within the hour becomes this connection's agent and can upload what it reads.", conn.ID),
 			Warnings: []string{
 				"The code is shown once, in the result: give it only to the user, and run it only on a machine they control.",
-				"An unused earlier code stops working, and an enrolled agent is replaced once the new code is used.",
+				"An unused earlier code stops working, and an enrolled agent is replaced once the new code is used: a connection has one agent at a time.",
 			},
 			Data: map[string]any{"connection": conn},
 		}
 		if !conn.isAgent() {
-			p.Warnings = append(p.Warnings, "This connection is not read by an agent: Pantech refuses (CLOUD_CONNECTION_NOT_AGENT).")
+			p.Warnings = append(p.Warnings, "Pantech scans this cloud itself: this agent runs only server copies, database imports and Kubernetes moves, and needs no provider token.")
 		}
 		return p, nil
 	}, func(ctx context.Context, c *Call, in enrollMigrateAgentInput) (*Result, error) {
@@ -235,12 +235,12 @@ func init() {
 		if err := c.Client.Do(ctx, "POST", "/cloud-connections/"+in.ConnectionID+"/agent-enrollments", nil, nil, &e, c.writeOpts()...); err != nil {
 			return nil, err
 		}
-		return ok(fmt.Sprintf("Enrollment code issued for connection %s; it is in the data with the command that uses it, valid once until expires_at. Give the user the command to run where the agent will run, with their read-only provider token in its environment (setup.agent.token_variables on the connection names it), then the connection's setup.agent.run_command (or container_command) to keep the agent running. Do not repeat the code anywhere else. Then scan_cloud_account.", in.ConnectionID), e)
+		return ok(fmt.Sprintf("Enrollment code issued for connection %s; it is in the data with the command that uses it, valid once until expires_at. Give the user the command to run where the agent will run, then the connection's setup.agent.run_command (or container_command) to keep the agent running: with their read-only provider token in its environment when the agent scans (setup.agent.token_variables names it), and run --server-copy sco_… instead, as root on the server, to copy that server. Do not repeat the code anywhere else.", in.ConnectionID), e)
 	})
 
 	add(Spec{
 		Name: "revoke_migrate_agent", Title: "Revoke a connection's Pantech Migrate agent",
-		Description: "End an agent connection's Pantech Migrate agent at once: its credential stops working on its next request, and the connection waits for a new agent (enroll_migrate_agent). It only takes access away, so Manage access is enough. Revoking again changes nothing.",
+		Description: "End a connection's Pantech Migrate agent at once: its credential stops working on its next request, any server copy upload it was running ends, and the connection waits for a new agent (enroll_migrate_agent). It only takes access away, so Manage access is enough. Revoking again changes nothing.",
 		Risk:        Write, Idempotent: true,
 		Routes: []string{"DELETE /cloud-connections/{connection_id}/agent"},
 	}, func(ctx context.Context, c *Call, in cloudConnectionInput) (*Result, error) {
@@ -252,7 +252,7 @@ func init() {
 			return nil, err
 		}
 		conn.sanitize()
-		return ok(fmt.Sprintf("The agent of connection %s is revoked. The user can also stop it and delete its read-only token in the other cloud.", in.ConnectionID), conn)
+		return ok(fmt.Sprintf("The agent of connection %s is revoked. The user can also stop it, delete its state file, and delete any read-only token it used in the other cloud.", in.ConnectionID), conn)
 	})
 
 	addConfirmed(Spec{
