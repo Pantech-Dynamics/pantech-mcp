@@ -129,10 +129,12 @@ The instance tools let your AI app work inside one of your instances, with no mo
 and no SSH key or password involved. For now they work only through the hosted server, connected
 as an AI app: Pantech refuses them to a standard API key, so the local server cannot use them.
 Enable the instance's Pantech agent in the console (its
-Agent tab) first. `start_tools_session` opens a session in `plan` mode (reads only) or `ask` mode;
-each step then runs as the session's unprivileged user, under platform policy (the agent itself
-and its files cannot be touched). In `ask` mode, anything outside a safe list waits until you
-approve it in the console, under the session: an AI app cannot approve its own steps. Output is
+Agent tab) first. `start_tools_session` opens a session in `auto` mode unless told otherwise;
+`ask` and `plan` (reads only) are the other modes. Each step runs as the session's unprivileged
+user, under platform policy (the agent itself and its files cannot be touched). In `auto` mode
+steps run without your approval, except destructive git. In `ask` mode, anything outside a safe
+list waits until you approve it in the console, under the session: an AI app cannot approve its
+own steps. Output is
 returned as data, cut to its last 16 KiB. You see every step in the console and can end the
 session at any time.
 

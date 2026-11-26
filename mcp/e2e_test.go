@@ -1380,8 +1380,15 @@ func TestInstanceStepsFenceWhatTheInstanceReported(t *testing.T) {
 		}
 	}
 
-	if res, _ := call(t, cs, "start_tools_session", map[string]any{"instance_id": "vm_1", "title": "t", "mode": "auto"}); !res.IsError {
-		t.Error("mode auto was accepted")
+	// Left out, the mode is auto; an unknown mode is refused before any call.
+	before := len(api.calls("POST", "/instances/vm_1/agent-sessions"))
+	call(t, cs, "start_tools_session", map[string]any{"instance_id": "vm_1", "title": "t"})
+	sessPosts := api.calls("POST", "/instances/vm_1/agent-sessions")
+	if len(sessPosts) != before+1 || !strings.Contains(sessPosts[len(sessPosts)-1].Body, `"mode":"auto"`) {
+		t.Errorf("a session with no mode was not started in auto mode: %d posts", len(sessPosts)-before)
+	}
+	if res, _ := call(t, cs, "start_tools_session", map[string]any{"instance_id": "vm_1", "title": "t", "mode": "yolo"}); !res.IsError {
+		t.Error("an unknown mode was accepted")
 	}
 }
 

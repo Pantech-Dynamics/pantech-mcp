@@ -59,7 +59,7 @@ type instanceAgentInput struct {
 type startToolsSessionInput struct {
 	InstanceID string `json:"instance_id" jsonschema:"The instance to work in. Its Pantech agent must be enabled (get_instance_agent)."`
 	Title      string `json:"title" jsonschema:"A short title for the session, shown to the user in the console, e.g. 'Fix the nginx config'."`
-	Mode       string `json:"mode" jsonschema:"plan: only read_instance_file and list_instance_dir. ask: also run_in_instance and write_instance_file; anything outside a safe list waits for the user's approval in the console."`
+	Mode       string `json:"mode,omitempty" jsonschema:"Default auto. auto: every step runs without the user's approval, except what platform policy refuses and destructive git, which waits for it. ask: anything outside a safe list waits for the user's approval in the console. plan: only read_instance_file and list_instance_dir."`
 }
 
 type listAgentSessionsInput struct {
@@ -132,15 +132,18 @@ func init() {
 
 	add(Spec{
 		Name: "start_tools_session", Title: "Start working in an instance",
-		Description: "Start a tools session on an instance, so run_in_instance, read_instance_file, write_instance_file and list_instance_dir can work there. No model runs on the instance: this AI app decides each step. Every step runs as an unprivileged user, and in ask mode anything outside a safe list waits for the user to approve it in the console. The user sees the session and every step in the console, and can end it at any time.",
+		Description: "Start a tools session on an instance, so run_in_instance, read_instance_file, write_instance_file and list_instance_dir can work there. No model runs on the instance: this AI app decides each step. Every step runs as an unprivileged user. In auto mode (the default) steps run without approval, except destructive git; in ask mode anything outside a safe list waits for the user to approve it in the console. The user sees the session and every step in the console, and can end it at any time.",
 		Risk:        Write,
 		Routes:      []string{"POST /instances/{instance_id}/agent-sessions"},
 	}, func(ctx context.Context, c *Call, in startToolsSessionInput) (*Result, error) {
 		if err := checkIDs("instance_id", in.InstanceID); err != nil {
 			return nil, err
 		}
-		if in.Mode != "plan" && in.Mode != "ask" {
-			return nil, errorf("mode must be plan or ask.")
+		if in.Mode == "" {
+			in.Mode = "auto"
+		}
+		if in.Mode != "plan" && in.Mode != "ask" && in.Mode != "auto" {
+			return nil, errorf("mode must be auto, ask or plan.")
 		}
 		body := map[string]any{"title": in.Title, "kind": "tools", "mode": in.Mode}
 		var s agentSession
@@ -195,7 +198,7 @@ func init() {
 
 	add(Spec{
 		Name: "run_in_instance", Title: "Run a command in an instance",
-		Description: "Run a bash command on the instance of a tools session, as the session's unprivileged user, and wait for it (up to about a minute; longer commands keep running: follow them with get_agent_tool_call). Returns the exit code and the last 16 KiB of stdout and stderr. In an ask session a command outside the safe list waits for the user's approval in the console. Not in a plan session.",
+		Description: "Run a bash command on the instance of a tools session, as the session's unprivileged user, and wait for it (up to about a minute; longer commands keep running: follow them with get_agent_tool_call). Returns the exit code and the last 16 KiB of stdout and stderr. In an auto session it runs without approval, except destructive git; in an ask session a command outside the safe list waits for the user's approval in the console. Not in a plan session.",
 		Risk:        Write,
 		Routes:      []string{toolCallRoutes, toolCallGetRoute, sessionGetRoute},
 	}, func(ctx context.Context, c *Call, in runInInstanceInput) (*Result, error) {
@@ -214,7 +217,7 @@ func init() {
 
 	add(Spec{
 		Name: "read_instance_file", Title: "Read a file on an instance",
-		Description: "Read a file on the instance of a tools session, as the session's user: its first 32 KiB and its size. Works in plan and ask sessions.",
+		Description: "Read a file on the instance of a tools session, as the session's user: its first 32 KiB and its size. Works in every mode.",
 		Risk:        Write,
 		Routes:      []string{toolCallRoutes, toolCallGetRoute, sessionGetRoute},
 	}, func(ctx context.Context, c *Call, in instanceFileInput) (*Result, error) {
@@ -223,7 +226,7 @@ func init() {
 
 	add(Spec{
 		Name: "list_instance_dir", Title: "List a directory on an instance",
-		Description: "List a directory on the instance of a tools session, as the session's user: names, types and sizes, at most 500 entries. Works in plan and ask sessions.",
+		Description: "List a directory on the instance of a tools session, as the session's user: names, types and sizes, at most 500 entries. Works in every mode.",
 		Risk:        Write,
 		Routes:      []string{toolCallRoutes, toolCallGetRoute, sessionGetRoute},
 	}, func(ctx context.Context, c *Call, in instanceFileInput) (*Result, error) {
@@ -232,7 +235,7 @@ func init() {
 
 	add(Spec{
 		Name: "write_instance_file", Title: "Write a file on an instance",
-		Description: "Write a whole file on the instance of a tools session, as the session's user, replacing it if it exists. In an ask session it waits for the user's approval in the console unless a session rule allows it. Not in a plan session.",
+		Description: "Write a whole file on the instance of a tools session, as the session's user, replacing it if it exists. In an auto session it runs without approval; in an ask session it waits for the user's approval in the console unless a session rule allows it. Not in a plan session.",
 		Risk:        Write,
 		Routes:      []string{toolCallRoutes, toolCallGetRoute, sessionGetRoute},
 	}, func(ctx context.Context, c *Call, in writeInstanceFileInput) (*Result, error) {

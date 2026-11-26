@@ -5,6 +5,12 @@ tagged and released (binaries on GitHub, the image on ghcr.io).
 
 ## Unreleased
 
+### Changed
+
+- `start_tools_session` starts in `auto` mode when `mode` is left out, and accepts `auto`: steps
+  run without the user's approval, except what platform policy refuses and destructive git.
+  `ask` and `plan` work as before.
+
 ## v0.7.0 — 2026-11-28
 
 ### Added
