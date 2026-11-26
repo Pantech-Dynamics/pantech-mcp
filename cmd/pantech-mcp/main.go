@@ -186,6 +186,7 @@ func runHTTP(ctx context.Context, args []string, stderr io.Writer) error {
 		AuthorizationServer:   *authServer,
 		APIURL:                *apiURL,
 		ConfirmSecret:         []byte(os.Getenv("MCP_CONFIRM_SECRET")),
+		ApprovalRelayKey:      strings.TrimSpace(os.Getenv("MCP_APPROVAL_RELAY_KEY")),
 		TrustProxy:            *trustProxy,
 		AllowedOrigins:        allowed,
 		RateLimitIP:           envInt("MCP_RATE_LIMIT_IP"),

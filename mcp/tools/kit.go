@@ -116,6 +116,10 @@ type Env struct {
 	// generic description.
 	CallerAddress func(req *sdk.CallToolRequest) CallerAddress
 	Logger        *slog.Logger
+	// ApprovalRelayKey, when set (the hosted server), lets a step that waits
+	// for approval be shown to the person in their AI app, and their answer
+	// sent on with ApprovalRelayHeader. Empty: approvals stay in the console.
+	ApprovalRelayKey string
 }
 
 // CallerAddress is the address the API sees a call's requests come from.
@@ -165,6 +169,9 @@ type Call struct {
 	// bound is the live state a confirmed call's token was checked
 	// against (see confirmOptions.bind), for execute to use.
 	bound string
+	// subject is the caller (a hash of their key): an approval prompt's
+	// request state is bound to it.
+	subject string
 }
 
 // writeOpts are the request options a write sends: the Idempotency-Key
@@ -394,7 +401,7 @@ func newCall(ctx context.Context, env *Env, tool string, req *sdk.CallToolReques
 	if err != nil {
 		return nil, "", err
 	}
-	return &Call{Client: client, Req: req, env: env, tool: tool}, subject, nil
+	return &Call{Client: client, Req: req, env: env, tool: tool, subject: subject}, subject, nil
 }
 
 // CanonicalArgs is the JSON a confirmation token is bound to: the input with

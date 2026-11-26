@@ -10,6 +10,15 @@ tagged and released (binaries on GitHub, the image on ghcr.io).
 - `start_tools_session` starts in `auto` mode when `mode` is left out, and accepts `auto`: steps
   run without the user's approval, except what platform policy refuses and destructive git.
   `ask` and `plan` work as before.
+- A step that waits for the user's approval waits up to 24 hours (was 15 minutes).
+
+### Added
+
+- On the hosted server (with `MCP_APPROVAL_RELAY_KEY`), `run_in_instance`, `write_instance_file`
+  and the other instance tools show a step that waits for approval to the user in their AI app,
+  Approve or Deny with an optional reason, when the app can show MCP prompts (form input requests,
+  protocol 2026-07-28). Their answer is sent to Pantech and the tool returns the step's result.
+  Dismissing the prompt leaves the step for the console; apps without prompts work as before.
 
 ## v0.7.0 — 2026-11-28
 
