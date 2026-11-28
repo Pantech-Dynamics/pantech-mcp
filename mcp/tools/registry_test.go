@@ -138,6 +138,10 @@ var wantRisk = map[string]Risk{
 	"create_bucket_share": Exposure, "revoke_bucket_share": Destructive,
 	"create_bucket_notification": Write, "update_bucket_notification": Destructive, "delete_bucket_notification": Destructive,
 	"create_bucket_domain": Exposure, "update_bucket_domain": Destructive, "delete_bucket_domain": Destructive,
+
+	// Dynamic IP (scheduled outbound IPv4 rotation).
+	"get_instance_dynamic_ip": Read, "set_instance_dynamic_ip": Cost,
+	"rotate_instance_dynamic_ip": Destructive, "disable_instance_dynamic_ip": Destructive,
 }
 
 // readPOSTs are the POST routes a read-only tool may call: they compute an

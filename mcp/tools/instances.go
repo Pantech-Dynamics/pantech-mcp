@@ -27,17 +27,19 @@ type instanceInput struct {
 }
 
 type createInstanceInput struct {
-	Name            string            `json:"name" jsonschema:"1 to 255 lowercase letters, digits and hyphens, unique among your instances."`
-	PlanSlug        string            `json:"plan_slug" jsonschema:"The size, from list_plans."`
-	ImageSlug       string            `json:"image_slug" jsonschema:"The operating system, from list_images."`
-	SSHKeyID        string            `json:"ssh_key_id,omitempty" jsonschema:"An SSH key from list_ssh_keys, installed for the default user. Required: every image this tool creates signs in with a key."`
-	Region          string            `json:"region,omitempty" jsonschema:"A region code from list_regions, e.g. af-abj."`
-	SubnetID        string            `json:"subnet_id,omitempty" jsonschema:"Place the instance in this VPC subnet (private address only)."`
-	NetworkID       string            `json:"network_id,omitempty" jsonschema:"The subnet's VPC."`
-	SecurityGroupID string            `json:"security_group_id,omitempty" jsonschema:"Standard instances only: one of your security groups."`
-	Encrypted       bool              `json:"encrypted,omitempty" jsonschema:"Encrypt the disk."`
-	Tags            map[string]string `json:"tags,omitempty" jsonschema:"Your own labels."`
-	Agent           bool              `json:"agent,omitempty" jsonschema:"Install the Pantech agent at first boot, so start_tools_session can work in the instance with no login to it. Set at creation only."`
+	Name                 string            `json:"name" jsonschema:"1 to 255 lowercase letters, digits and hyphens, unique among your instances."`
+	PlanSlug             string            `json:"plan_slug" jsonschema:"The size, from list_plans."`
+	ImageSlug            string            `json:"image_slug" jsonschema:"The operating system, from list_images."`
+	SSHKeyID             string            `json:"ssh_key_id,omitempty" jsonschema:"An SSH key from list_ssh_keys, installed for the default user. Required: every image this tool creates signs in with a key."`
+	Region               string            `json:"region,omitempty" jsonschema:"A region code from list_regions, e.g. af-abj."`
+	SubnetID             string            `json:"subnet_id,omitempty" jsonschema:"Place the instance in this VPC subnet (private address only)."`
+	NetworkID            string            `json:"network_id,omitempty" jsonschema:"The subnet's VPC."`
+	SecurityGroupID      string            `json:"security_group_id,omitempty" jsonschema:"Standard instances only: one of your security groups."`
+	Encrypted            bool              `json:"encrypted,omitempty" jsonschema:"Encrypt the disk."`
+	Tags                 map[string]string `json:"tags,omitempty" jsonschema:"Your own labels."`
+	Agent                bool              `json:"agent,omitempty" jsonschema:"Install the Pantech agent at first boot, so start_tools_session can work in the instance with no login to it. Set at creation only."`
+	DynamicIPSchedule    string            `json:"dynamic_ip_schedule,omitempty" jsonschema:"Standard instances only: enable Dynamic IP (scheduled outbound IPv4 rotation) on creation. One of every_12_hours (+60%), daily (+50%), weekly (+40%) or monthly (+30%). Requires a custom security_group_id allowing nothing from the private network range."`
+	DynamicIPConnections string            `json:"dynamic_ip_connections,omitempty" jsonschema:"When dynamic_ip_schedule is set, how open outbound connections behave on rotation: keep (default: finish on the old address) or move (move at once)."`
 	Confirmation
 }
 
@@ -114,6 +116,10 @@ func init() {
 		if err := checkImageAccess(img, in); err != nil {
 			return nil, err
 		}
+		dipPct, dipConns, err := checkCreateDynamicIP(in)
+		if err != nil {
+			return nil, err
+		}
 		p := &Preview{
 			Action: fmt.Sprintf("Create a new %s instance on plan %s (%d vCPU, %d MB memory, %d GB disk) with image %s.",
 				placement, plan.Slug, plan.VCPU, plan.MemoryMB, plan.DiskGB, arg(in.ImageSlug)),
@@ -123,11 +129,26 @@ func init() {
 		if in.Agent {
 			p.Action += " The Pantech agent is installed at first boot, so an AI app can work in it through a tools session."
 		}
+		if in.DynamicIPSchedule != "" {
+			p.Action += fmt.Sprintf(" Dynamic IP is enabled on creation (schedule %s, connections %s, +%d%% surcharge).", in.DynamicIPSchedule, dipConns, dipPct)
+			p.Price += fmt.Sprintf(" + %d%% Dynamic IP surcharge (%s schedule; applies to the initial payment and hourly running price)", dipPct, in.DynamicIPSchedule)
+			if in.SecurityGroupID == "" {
+				p.Warnings = append(p.Warnings, "Dynamic IP requires a custom security_group_id that allows nothing from the private network range (the default security group is refused). Pass security_group_id or Pantech will refuse this order.")
+			} else {
+				p.Warnings = append(p.Warnings, "Dynamic IP requires the chosen custom security group to allow nothing from the private network range (for example no 0.0.0.0/0 ingress rules).")
+			}
+			if dipConns == "move" {
+				p.Warnings = append(p.Warnings, "With dynamic_ip_connections set to move, active outbound connections are moved immediately on rotation, which can drop open TCP sessions.")
+			}
+		}
 		if note := c.creditNote(ctx); note != "" {
 			p.Warnings = append(p.Warnings, note)
 		}
 		return p, nil
 	}, func(ctx context.Context, c *Call, in createInstanceInput) (*Result, error) {
+		if _, _, err := checkCreateDynamicIP(in); err != nil {
+			return nil, err
+		}
 		order, err := c.createInstance(ctx, in)
 		if err != nil {
 			return nil, err
@@ -331,7 +352,38 @@ func (in createInstanceInput) request() pantech.CreateInstanceRequest {
 	if len(in.Tags) > 0 {
 		req.Tags = &in.Tags
 	}
+	if in.DynamicIPSchedule != "" {
+		conns := in.DynamicIPConnections
+		if conns == "" {
+			conns = "keep"
+		}
+		req.DynamicIP = &pantech.CreateInstanceDynamicIP{
+			Schedule:    in.DynamicIPSchedule,
+			Connections: pantech.Ptr(conns),
+		}
+	}
 	return req
+}
+
+func checkCreateDynamicIP(in createInstanceInput) (int, string, error) {
+	if in.DynamicIPSchedule == "" && in.DynamicIPConnections == "" {
+		return 0, "", nil
+	}
+	if in.DynamicIPSchedule == "" {
+		return 0, "", errorf("dynamic_ip_connections requires dynamic_ip_schedule (every_12_hours, daily, weekly or monthly).")
+	}
+	pct, err := checkDynamicIPSchedule("dynamic_ip_schedule", in.DynamicIPSchedule)
+	if err != nil {
+		return 0, "", err
+	}
+	conns, err := checkDynamicIPConnections("dynamic_ip_connections", in.DynamicIPConnections)
+	if err != nil {
+		return 0, "", err
+	}
+	if placementOf(in.SubnetID, in.NetworkID) != "standard" {
+		return 0, "", errorf("Dynamic IP is only available on standard instances (not VPC subnets).")
+	}
+	return pct, conns, nil
 }
 
 // followOrder waits for an instance or database order to be provisioned and
