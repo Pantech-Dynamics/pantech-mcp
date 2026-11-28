@@ -60,6 +60,9 @@ type Options struct {
 	APIKey string
 	// Confirm issues and checks confirmation tokens.
 	Confirm *Confirmer
+	// ApprovalRelayKey: see HTTPConfig.ApprovalRelayKey. Never set in stdio
+	// mode, whose binary is on the user's own machine.
+	ApprovalRelayKey string
 	// HTTPClient is used for API calls. Default: 60s timeout.
 	HTTPClient *http.Client
 	// IconURL is the logo's URL in serverInfo. Default DefaultIconURL.
@@ -104,12 +107,13 @@ func New(opts Options) *sdk.Server {
 	s := sdk.NewServer(impl, &sdk.ServerOptions{Instructions: instructions, Logger: opts.Logger})
 
 	env := &tools.Env{
-		Client:        clientFactory(opts),
-		Confirm:       opts.Confirm,
-		WaitBudget:    opts.WaitBudget,
-		PollInterval:  opts.PollInterval,
-		CallerAddress: callerAddress(opts),
-		Logger:        opts.Logger,
+		Client:           clientFactory(opts),
+		Confirm:          opts.Confirm,
+		WaitBudget:       opts.WaitBudget,
+		PollInterval:     opts.PollInterval,
+		CallerAddress:    callerAddress(opts),
+		Logger:           opts.Logger,
+		ApprovalRelayKey: opts.ApprovalRelayKey,
 	}
 	tools.Register(s, env)
 	addResources(s, opts)

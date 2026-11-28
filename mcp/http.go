@@ -46,6 +46,10 @@ type HTTPConfig struct {
 	// ConfirmSecret signs confirmation tokens; at least 32 bytes. Replicas
 	// behind one URL must share it.
 	ConfirmSecret []byte
+	// ApprovalRelayKey, the same value as the API's AGENT_APPROVAL_RELAY_KEY,
+	// lets a step waiting for approval be shown to the person in their AI app
+	// (MCP_APPROVAL_RELAY_KEY). Empty: approvals stay in the console.
+	ApprovalRelayKey string
 	// TrustProxy trusts X-Forwarded-For / X-Real-IP / X-Request-Id, set by
 	// the reverse proxy in front. Never set it without one.
 	TrustProxy bool
@@ -73,6 +77,9 @@ type HTTPConfig struct {
 func (c *HTTPConfig) Validate() error {
 	if len(c.ConfirmSecret) < MinConfirmSecret {
 		return fmt.Errorf("MCP_CONFIRM_SECRET is required and must be at least %d bytes (e.g. openssl rand -base64 48)", MinConfirmSecret)
+	}
+	if c.ApprovalRelayKey != "" && len(c.ApprovalRelayKey) < 32 {
+		return fmt.Errorf("MCP_APPROVAL_RELAY_KEY must be at least 32 characters (e.g. openssl rand -hex 32)")
 	}
 	if err := checkOrigin("MCP_PUBLIC_URL", c.PublicURL); err != nil {
 		return err
@@ -141,8 +148,9 @@ func NewHTTPHandler(cfg HTTPConfig) (http.Handler, error) {
 		DocsURL:    cfg.DocsURL,
 		Logger:     log,
 
-		WaitBudget:   cfg.WaitBudget,
-		PollInterval: cfg.PollInterval,
+		WaitBudget:       cfg.WaitBudget,
+		PollInterval:     cfg.PollInterval,
+		ApprovalRelayKey: cfg.ApprovalRelayKey,
 	})
 	streamable := sdk.NewStreamableHTTPHandler(func(*http.Request) *sdk.Server { return server }, &sdk.StreamableHTTPOptions{
 		Stateless:           true,

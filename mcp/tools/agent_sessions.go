@@ -59,7 +59,7 @@ type instanceAgentInput struct {
 type startToolsSessionInput struct {
 	InstanceID string `json:"instance_id" jsonschema:"The instance to work in. Its Pantech agent must be enabled (get_instance_agent)."`
 	Title      string `json:"title" jsonschema:"A short title for the session, shown to the user in the console, e.g. 'Fix the nginx config'."`
-	Mode       string `json:"mode" jsonschema:"plan: only read_instance_file and list_instance_dir. ask: also run_in_instance and write_instance_file; anything outside a safe list waits for the user's approval in the console."`
+	Mode       string `json:"mode,omitempty" jsonschema:"Default auto. auto: every step runs without the user's approval, except what platform policy refuses and destructive git, which waits for it. ask: anything outside a safe list waits for the user's approval in the console. plan: only read_instance_file and list_instance_dir."`
 }
 
 type listAgentSessionsInput struct {
@@ -132,15 +132,18 @@ func init() {
 
 	add(Spec{
 		Name: "start_tools_session", Title: "Start working in an instance",
-		Description: "Start a tools session on an instance, so run_in_instance, read_instance_file, write_instance_file and list_instance_dir can work there. No model runs on the instance: this AI app decides each step. Every step runs as an unprivileged user, and in ask mode anything outside a safe list waits for the user to approve it in the console. The user sees the session and every step in the console, and can end it at any time.",
+		Description: "Start a tools session on an instance, so run_in_instance, read_instance_file, write_instance_file and list_instance_dir can work there. No model runs on the instance: this AI app decides each step. Every step runs as an unprivileged user. In auto mode (the default) steps run without approval, except destructive git; in ask mode anything outside a safe list waits for the user to approve it in the console. The user sees the session and every step in the console, and can end it at any time.",
 		Risk:        Write,
 		Routes:      []string{"POST /instances/{instance_id}/agent-sessions"},
 	}, func(ctx context.Context, c *Call, in startToolsSessionInput) (*Result, error) {
 		if err := checkIDs("instance_id", in.InstanceID); err != nil {
 			return nil, err
 		}
-		if in.Mode != "plan" && in.Mode != "ask" {
-			return nil, errorf("mode must be plan or ask.")
+		if in.Mode == "" {
+			in.Mode = "auto"
+		}
+		if in.Mode != "plan" && in.Mode != "ask" && in.Mode != "auto" {
+			return nil, errorf("mode must be auto, ask or plan.")
 		}
 		body := map[string]any{"title": in.Title, "kind": "tools", "mode": in.Mode}
 		var s agentSession
@@ -195,9 +198,9 @@ func init() {
 
 	add(Spec{
 		Name: "run_in_instance", Title: "Run a command in an instance",
-		Description: "Run a bash command on the instance of a tools session, as the session's unprivileged user, and wait for it (up to about a minute; longer commands keep running: follow them with get_agent_tool_call). Returns the exit code and the last 16 KiB of stdout and stderr. In an ask session a command outside the safe list waits for the user's approval in the console. Not in a plan session.",
+		Description: "Run a bash command on the instance of a tools session, as the session's unprivileged user, and wait for it (up to about a minute; longer commands keep running: follow them with get_agent_tool_call). Returns the exit code and the last 16 KiB of stdout and stderr. In an auto session it runs without approval, except destructive git; in an ask session a command outside the safe list waits up to 24 hours for the user's approval, which they give in this AI app when it can show Pantech's prompt, or else in the console. Not in a plan session.",
 		Risk:        Write,
-		Routes:      []string{toolCallRoutes, toolCallGetRoute, sessionGetRoute},
+		Routes:      []string{toolCallRoutes, toolCallGetRoute, sessionGetRoute, approvalDecideRoute},
 	}, func(ctx context.Context, c *Call, in runInInstanceInput) (*Result, error) {
 		if in.TimeoutSeconds < 0 || in.TimeoutSeconds > 600 {
 			return nil, errorf("timeout_seconds must be 1 to 600.")
@@ -209,34 +212,35 @@ func init() {
 		if in.TimeoutSeconds > 0 {
 			body["timeout_seconds"] = in.TimeoutSeconds
 		}
-		return c.callInstanceTool(ctx, in.SessionID, body)
+		return c.callInstanceTool(ctx, in.SessionID, body, "run this command on your instance:\n\n"+in.Command)
 	})
 
 	add(Spec{
 		Name: "read_instance_file", Title: "Read a file on an instance",
-		Description: "Read a file on the instance of a tools session, as the session's user: its first 32 KiB and its size. Works in plan and ask sessions.",
+		Description: "Read a file on the instance of a tools session, as the session's user: its first 32 KiB and its size. Works in every mode.",
 		Risk:        Write,
-		Routes:      []string{toolCallRoutes, toolCallGetRoute, sessionGetRoute},
+		Routes:      []string{toolCallRoutes, toolCallGetRoute, sessionGetRoute, approvalDecideRoute},
 	}, func(ctx context.Context, c *Call, in instanceFileInput) (*Result, error) {
-		return c.callInstanceTool(ctx, in.SessionID, map[string]any{"tool": "read_file", "path": in.Path})
+		return c.callInstanceTool(ctx, in.SessionID, map[string]any{"tool": "read_file", "path": in.Path}, "read this file on your instance: "+in.Path)
 	})
 
 	add(Spec{
 		Name: "list_instance_dir", Title: "List a directory on an instance",
-		Description: "List a directory on the instance of a tools session, as the session's user: names, types and sizes, at most 500 entries. Works in plan and ask sessions.",
+		Description: "List a directory on the instance of a tools session, as the session's user: names, types and sizes, at most 500 entries. Works in every mode.",
 		Risk:        Write,
-		Routes:      []string{toolCallRoutes, toolCallGetRoute, sessionGetRoute},
+		Routes:      []string{toolCallRoutes, toolCallGetRoute, sessionGetRoute, approvalDecideRoute},
 	}, func(ctx context.Context, c *Call, in instanceFileInput) (*Result, error) {
-		return c.callInstanceTool(ctx, in.SessionID, map[string]any{"tool": "list_dir", "path": in.Path})
+		return c.callInstanceTool(ctx, in.SessionID, map[string]any{"tool": "list_dir", "path": in.Path}, "list this folder on your instance: "+in.Path)
 	})
 
 	add(Spec{
 		Name: "write_instance_file", Title: "Write a file on an instance",
-		Description: "Write a whole file on the instance of a tools session, as the session's user, replacing it if it exists. In an ask session it waits for the user's approval in the console unless a session rule allows it. Not in a plan session.",
+		Description: "Write a whole file on the instance of a tools session, as the session's user, replacing it if it exists. In an auto session it runs without approval; in an ask session it waits up to 24 hours for the user's approval (in this AI app when it can show Pantech's prompt, or else in the console) unless a session rule allows it. Not in a plan session.",
 		Risk:        Write,
-		Routes:      []string{toolCallRoutes, toolCallGetRoute, sessionGetRoute},
+		Routes:      []string{toolCallRoutes, toolCallGetRoute, sessionGetRoute, approvalDecideRoute},
 	}, func(ctx context.Context, c *Call, in writeInstanceFileInput) (*Result, error) {
-		return c.callInstanceTool(ctx, in.SessionID, map[string]any{"tool": "write_file", "path": in.Path, "content": in.Content})
+		return c.callInstanceTool(ctx, in.SessionID, map[string]any{"tool": "write_file", "path": in.Path, "content": in.Content},
+			fmt.Sprintf("write this file on your instance (%d bytes): %s", len(in.Content), in.Path))
 	})
 
 	add(Spec{
@@ -315,11 +319,16 @@ func init() {
 }
 
 // callInstanceTool queues one step and waits for it within the wait budget,
-// with progress. A step that needs a person's approval is returned at once:
-// waiting longer only uses up the call.
-func (c *Call) callInstanceTool(ctx context.Context, sessionID string, body map[string]any) (*Result, error) {
+// with progress. A step that needs a person's approval is shown to them in
+// their AI app when it can be (approval_prompt.go), and otherwise returned at
+// once: waiting longer only uses up the call. what says what the step does.
+func (c *Call) callInstanceTool(ctx context.Context, sessionID string, body map[string]any, what string) (*Result, error) {
 	if err := checkIDs("session_id", sessionID); err != nil {
 		return nil, err
+	}
+	// The same call again, with the person's answer: decide the step it showed, never queue another.
+	if res, answered, err := c.answerPrompt(ctx); answered {
+		return res, err
 	}
 	var tc agentToolCall
 	if err := c.Client.Do(ctx, "POST", "/agent-sessions/"+sessionID+"/tool-calls", nil, body, &tc, c.writeOpts()...); err != nil {
@@ -340,6 +349,11 @@ func (c *Call) callInstanceTool(ctx context.Context, sessionID string, body map[
 			break // it was queued: say so below rather than invite a retry
 		}
 		tc = next
+	}
+	if tc.Status == "waiting_approval" && tc.ApprovalID != nil && *tc.ApprovalID != "" && c.canPrompt() {
+		if ask := c.promptApproval(&tc, what); ask != nil {
+			return ask, nil
+		}
 	}
 	res := toolCallResult(&tc)
 	c.noteOffline(ctx, res, &tc)
@@ -405,13 +419,13 @@ func toolCallResult(tc *agentToolCall) *Result {
 	case "timed_out":
 		text = fmt.Sprintf("Call %s ran out of time and was stopped.", id)
 	case "denied":
-		// Denied by the user, or closed because nobody answered within 15
-		// minutes: the reason, written on the instance, is in the data.
+		// Denied by the user, or closed because nobody answered within 24
+		// hours: the reason, written on the instance, is in the data.
 		text = fmt.Sprintf("Call %s did not run: the user denied it, or nobody answered it in time (the reason is in the data). Do not repeat it; ask them what they want instead.", id)
 	case "blocked":
 		text = fmt.Sprintf("Call %s was refused without asking: platform policy does not allow it, or the session's mode does not.", id)
 	case "waiting_approval":
-		text = fmt.Sprintf("Call %s is waiting for the user's approval. Ask them to approve or deny it in the Pantech console, under this session; an AI app cannot approve its own steps.", id) + follow
+		text = fmt.Sprintf("Call %s is waiting for the user's approval. Ask them to approve or deny it in the Pantech console, under this session; it waits 24 hours. An AI app cannot approve its own steps.", id) + follow
 	default:
 		text = fmt.Sprintf("Call %s is %s on the instance.", id, arg(tc.Status)) + follow
 	}

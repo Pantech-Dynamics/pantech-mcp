@@ -129,10 +129,14 @@ The instance tools let your AI app work inside one of your instances, with no mo
 and no SSH key or password involved. For now they work only through the hosted server, connected
 as an AI app: Pantech refuses them to a standard API key, so the local server cannot use them.
 Enable the instance's Pantech agent in the console (its
-Agent tab) first. `start_tools_session` opens a session in `plan` mode (reads only) or `ask` mode;
-each step then runs as the session's unprivileged user, under platform policy (the agent itself
-and its files cannot be touched). In `ask` mode, anything outside a safe list waits until you
-approve it in the console, under the session: an AI app cannot approve its own steps. Output is
+Agent tab) first. `start_tools_session` opens a session in `auto` mode unless told otherwise;
+`ask` and `plan` (reads only) are the other modes. Each step runs as the session's unprivileged
+user, under platform policy (the agent itself and its files cannot be touched). In `auto` mode
+steps run without your approval, except destructive git. In `ask` mode, anything outside a safe
+list waits up to 24 hours for your approval. On the hosted server, an AI app that can show MCP
+prompts (form input requests, protocol 2026-07-28) asks you right there, Approve or Deny; otherwise
+you approve it in the console, under the session. The AI model cannot answer either. Time a step
+waits on you does not count toward the session's time limit. Output is
 returned as data, cut to its last 16 KiB. You see every step in the console and can end the
 session at any time.
 
@@ -285,6 +289,7 @@ same `MCP_CONFIRM_SECRET`.
 | `MCP_AUTHORIZATION_SERVER` (`--authorization-server`) | `https://console.pantechdynamics.com` | The OAuth issuer named in the protected resource metadata. |
 | `PANTECH_API_URL` (`--api-url`) | `https://api.pantechdynamics.com/public/v1` | The public API. |
 | `MCP_CONFIRM_SECRET` | required, ≥ 32 bytes | Signs confirmation tokens. Every replica behind one URL needs the same value. |
+| `MCP_APPROVAL_RELAY_KEY` | empty, ≥ 32 characters when set | The same value as the API's `AGENT_APPROVAL_RELAY_KEY`. Lets a step waiting for approval be shown to the person in their AI app, and their answer sent on. Empty: approvals stay in the console. |
 | `MCP_TRUST_PROXY` (`--trust-proxy`) | `false` | Trust `X-Forwarded-For`, `X-Real-IP` and `X-Request-Id` from the reverse proxy. Set it only behind one. It also sends the caller's address to the API in the `X-Pantech-Client-IP` header; the public API ignores that header. |
 | `MCP_ALLOWED_ORIGINS` (`--allowed-origins`) | empty | Extra browser origins, comma-separated, besides claude.ai, chatgpt.com, chat.openai.com, grok.com and gemini.google.com. |
 | `MCP_RATE_LIMIT_IP` | `1200` | Requests a minute per client IP (negative turns it off). Generous because hosted AI apps reach the server from a few shared addresses. |

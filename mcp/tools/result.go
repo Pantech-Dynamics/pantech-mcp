@@ -27,6 +27,11 @@ type Result struct {
 	// Data is the structured result. It may carry customer-chosen strings.
 	Data    any
 	IsError bool
+	// Ask, when set, asks the person something in their AI app instead of
+	// returning a result: the client retries the call with their answer
+	// and State.
+	Ask   *sdk.ElicitParams
+	State string
 }
 
 // render turns r into the SDK's result: content is the summary plus the data
@@ -35,6 +40,9 @@ type Result struct {
 // summary, which carries what to do next, is in both.
 // json.Marshal escapes <, > and &, so no value in the data can close the fence.
 func (r *Result) render() (*sdk.CallToolResult, any, error) {
+	if r.Ask != nil {
+		return &sdk.CallToolResult{InputRequests: sdk.InputRequestMap{approvalInput: r.Ask}, RequestState: r.State}, nil, nil
+	}
 	text := r.Text
 	var structured any
 	if r.Data != nil {
