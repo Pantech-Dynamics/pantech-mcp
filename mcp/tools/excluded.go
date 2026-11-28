@@ -7,8 +7,9 @@ import (
 
 // excludedRoutes return or take secrets (kubeconfig, volume key credential,
 // console, Kubernetes manifests read or applied, which may hold Kubernetes
-// secrets (a Kubernetes move's transformed manifests too), database passwords, webhook signing secrets) or act on the caller's
-// own key or money. Temporary SSH
+// secrets (a Kubernetes move's transformed manifests too), database passwords,
+// webhook signing secrets, object storage S3 access key secrets) or act on the
+// caller's own key or money. Temporary SSH
 // access is allowed: a grant holds only a host, a port and an expiry, and the
 // user logs in with their own key. No tool may call them: TestNoExcludedRoutes
 // checks every tool's routes and the end-to-end test every request made.
@@ -22,6 +23,7 @@ var excludedRoutes = []*regexp.Regexp{
 	regexp.MustCompile(`/password$`),
 	regexp.MustCompile(`/reset-password$`),
 	regexp.MustCompile(`^POST /webhooks$`),
+	regexp.MustCompile(`^POST /object-storage/keys$`),
 	regexp.MustCompile(`/rotate-secret$`),
 	regexp.MustCompile(`/billing/credit/purchases`),
 	regexp.MustCompile(`/me$`), // DELETE /me revokes the caller's key; GET /me is allowed below
