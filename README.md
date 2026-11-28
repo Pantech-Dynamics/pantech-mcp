@@ -16,7 +16,7 @@
 </p>
 
 `pantech-mcp` lets AI apps work with your Pantech Dynamics cloud: list and create instances,
-networks, firewalls, public IPs, load balancers, volumes, snapshots, managed databases,
+networks, firewalls, public IPs, load balancers, volumes, snapshots, object storage buckets, managed databases,
 Kubernetes clusters, DNS zones and domains, container registry repositories, TLS certificates, teams and access policies, price a setup, explain your bill, and plan a move from
 AWS. See
 [Set up your AI app](#set-up-your-ai-app) for the supported apps.
@@ -96,6 +96,7 @@ or credentials file that other users can write, and an API URL that is not https
 | SSH | `list_ssh_keys`, `create_ssh_key` (public keys only), `delete_ssh_key` ★, `change_instance_ssh_key` ★, `open_ssh_access` ★, `get_ssh_access`, `revoke_ssh_access` |
 | Networking | `list_networks`, `create_network` ★, `delete_network` ★, `list_subnets`, `create_subnet`, `delete_subnet` ★, `list_firewall_rules`, `add_firewall_rule` ★, `delete_firewall_rule` ★, `list_public_ips`, `create_public_ip` ★, `attach_public_ip` ★, `detach_public_ip`, `delete_public_ip` ★, `list_port_forwarding_rules`, `create_port_forwarding_rule` ★, `delete_port_forwarding_rule` ★, `list_security_groups`, `create_security_group`, `update_security_group_rules` ★, `delete_security_group` ★, `list_load_balancers`, `create_load_balancer` ★, `update_load_balancer` ★, `delete_load_balancer` ★ |
 | Storage | `list_volumes`, `create_volume` ★, `attach_volume`, `detach_volume`, `resize_volume` ★, `delete_volume` ★, `get_volume_usage`, `list_snapshots`, `create_snapshot` ★, `restore_snapshot` ★, `delete_snapshot` ★, `get_snapshot_schedule`, `set_snapshot_schedule` ★ |
+| Object Storage | `get_object_storage`, `get_object_storage_usage`, `update_object_storage_settings` ★, `list_object_storage_keys`, `revoke_object_storage_key` ★, `list_buckets`, `list_shared_buckets`, `get_bucket`, `get_bucket_stats`, `create_bucket` ★, `update_bucket` ★, `empty_bucket` ★, `delete_bucket` ★, `list_bucket_objects`, `get_bucket_object_meta`, `set_bucket_object_visibility` ★, `restore_bucket_object_version`, `delete_bucket_objects` ★, `get_bucket_cors`, `set_bucket_cors` ★, `get_bucket_lifecycle`, `set_bucket_lifecycle` ★, `get_bucket_tags`, `set_bucket_tags` ★, `get_bucket_object_lock`, `set_bucket_object_lock` ★, `list_bucket_shares`, `create_bucket_share` ★, `revoke_bucket_share` ★, `list_bucket_notifications`, `create_bucket_notification`, `update_bucket_notification` ★, `delete_bucket_notification` ★, `list_bucket_domains`, `create_bucket_domain` ★, `update_bucket_domain` ★, `delete_bucket_domain` ★ |
 | Databases | `list_databases`, `get_database`, `create_database` ★, `get_database_order`, `start_database`, `stop_database`, `resize_database_storage` ★, `update_database_access_rules` ★, `list_database_snapshots`, `create_database_snapshot` ★, `delete_database` ★ |
 | Kubernetes | `list_kubernetes_clusters`, `get_kubernetes_cluster`, `list_kubernetes_versions`, `create_kubernetes_cluster` ★, `resize_kubernetes_node_plan` ★, `start_kubernetes_cluster`, `stop_kubernetes_cluster`, `delete_kubernetes_cluster` ★, `list_node_pools`, `create_node_pool` ★, `scale_node_pool` ★, `delete_node_pool` ★, `list_kubernetes_addons`, `toggle_kubernetes_addon` ★, `list_cluster_nodes`, `list_cluster_workloads` |
 | Inside an instance | `get_instance_agent`, `enable_instance_agent` ★, `start_tools_session`, `run_in_instance`, `read_instance_file`, `write_instance_file`, `list_instance_dir`, `get_agent_tool_call`, `list_agent_sessions`, `get_agent_session`, `list_agent_session_events`, `end_agent_session`, `get_agent_session_report` |
@@ -238,7 +239,7 @@ is wrong or is being manipulated:
 - **No double changes.** A confirmed call sends an `Idempotency-Key` derived from its token, so a
   retried confirmation returns the original result instead of creating a second server.
 - **No secrets in the conversation.** Kubeconfigs, volume key credentials, instance consoles,
-  Kubernetes manifests, database passwords and webhook secrets are never exposed as tools (a test
+  Kubernetes manifests, database passwords, webhook secrets and new S3 access key secrets are never exposed as tools (a test
   fails if any tool calls those routes). Temporary SSH access returns only a host, a port and an
   expiry; webhook deliveries are listed without the endpoint's responses. `create_ssh_key` only
   imports public keys; `create_database` drops the generated password (set your own in the

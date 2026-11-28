@@ -121,6 +121,23 @@ var wantRisk = map[string]Risk{
 	"list_certificates": Read, "get_certificate": Read, "request_certificate": Exposure, "import_certificate": Exposure,
 	"update_certificate": Write, "verify_certificate": Write, "reimport_certificate": Destructive,
 	"export_certificate": Destructive, "revoke_certificate": Destructive, "delete_certificate": Destructive,
+
+	// Object Storage. Access key creation is excluded so secrets never
+	// enter AI app context. Creating a bucket bills for stored data; public
+	// access, shares and custom domains expose data; bucket/object deletes,
+	// empties, rule replacements and revocations are destructive.
+	"get_object_storage": Read, "get_object_storage_usage": Read, "list_object_storage_keys": Read,
+	"list_buckets": Read, "list_shared_buckets": Read, "get_bucket": Read, "get_bucket_stats": Read,
+	"list_bucket_objects": Read, "get_bucket_object_meta": Read,
+	"get_bucket_cors": Read, "get_bucket_lifecycle": Read, "get_bucket_tags": Read, "get_bucket_object_lock": Read,
+	"list_bucket_shares": Read, "list_bucket_notifications": Read, "list_bucket_domains": Read,
+	"update_object_storage_settings": Exposure, "revoke_object_storage_key": Destructive,
+	"create_bucket": Cost, "update_bucket": Exposure, "empty_bucket": Destructive, "delete_bucket": Destructive,
+	"set_bucket_object_visibility": Exposure, "restore_bucket_object_version": Write, "delete_bucket_objects": Destructive,
+	"set_bucket_cors": Destructive, "set_bucket_lifecycle": Destructive, "set_bucket_tags": Destructive, "set_bucket_object_lock": Destructive,
+	"create_bucket_share": Exposure, "revoke_bucket_share": Destructive,
+	"create_bucket_notification": Write, "update_bucket_notification": Destructive, "delete_bucket_notification": Destructive,
+	"create_bucket_domain": Exposure, "update_bucket_domain": Destructive, "delete_bucket_domain": Destructive,
 }
 
 // readPOSTs are the POST routes a read-only tool may call: they compute an
@@ -263,14 +280,16 @@ func TestNoExcludedRoutes(t *testing.T) {
 	for _, r := range []string{"POST /kubernetes-clusters/{cluster_id}/kubeconfig", "POST /instances/{id}/console", "POST /webhooks",
 		"POST /webhooks/{id}/rotate-secret", "PUT /databases/{id}/password", "POST /databases/{id}/reset-password",
 		"POST /instances/{id}/volume-key-credential", "DELETE /me", "GET /kubernetes-clusters/{cluster_id}/live-manifests",
-		"POST /kubernetes-clusters/{cluster_id}/apply-manifest", "POST /billing/credit/purchases", "GET /kubernetes-moves/{move_id}/manifests"} {
+		"POST /kubernetes-clusters/{cluster_id}/apply-manifest", "POST /billing/credit/purchases", "GET /kubernetes-moves/{move_id}/manifests",
+		"POST /object-storage/keys"} {
 		if !ExcludedRoute(r) {
 			t.Errorf("%s should be excluded", r)
 		}
 	}
 	// A grant holds no secret, so temporary SSH access is allowed.
 	for _, r := range []string{"POST /instances/{instance_id}/ssh-access", "GET /instances/{instance_id}/ssh-access/{grant_id}", "GET /me",
-		"GET /webhooks/{webhook_id}/deliveries", "GET /billing/receipts", "GET /kubernetes-moves/source-access"} {
+		"GET /webhooks/{webhook_id}/deliveries", "GET /billing/receipts", "GET /kubernetes-moves/source-access",
+		"GET /object-storage/keys", "DELETE /object-storage/keys/{storage_key_id}"} {
 		if ExcludedRoute(r) {
 			t.Errorf("%s should not be excluded", r)
 		}
@@ -283,7 +302,7 @@ func TestNoExcludedCalls(t *testing.T) {
 	banned := []string{
 		"GetKubeconfig", "IssueVolumeKeyCredential", "OpenConsole", "GetLiveManifests", "ApplyManifest",
 		"ChangePassword", "ResetPassword", "Webhooks.Create", "RotateSecret", "SSHKeys.Create", "Databases.Create(",
-		"CreateCreditPurchase", "Me.Revoke", "GetReceiptPDF", "GetDelivery(", "Webhooks.Test",
+		"CreateCreditPurchase", "Me.Revoke", "GetReceiptPDF", "GetDelivery(", "Webhooks.Test", "ObjectStorage.CreateKey",
 		`"/kubeconfig`, `/volume-key-credential"`, `/console"`, `/live-manifests"`, `/apply-manifest"`, `/password"`, `/reset-password"`, `/rotate-secret"`,
 	}
 	files, err := filepath.Glob("*.go")

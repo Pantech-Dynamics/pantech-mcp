@@ -5,6 +5,33 @@ tagged and released (binaries on GitHub, the image on ghcr.io).
 
 ## Unreleased
 
+## v0.7.0 — 2026-11-28
+
+### Added
+
+- Object Storage tools across status, usage, access keys, buckets, objects, rules, shares, event
+  notifications and custom domains:
+  - Status, settings, usage and keys: `get_object_storage`, `get_object_storage_usage`,
+    `update_object_storage_settings` ★, `list_object_storage_keys`, `revoke_object_storage_key` ★.
+    `POST /object-storage/keys` is excluded so S3 secret access keys never enter an AI app's
+    context; create keys in the console or CLI.
+  - Buckets: `list_buckets`, `list_shared_buckets`, `get_bucket`, `get_bucket_stats`,
+    `create_bucket` ★ (supports `quota_bytes`, `versioning`, `object_lock`, `encryption`,
+    `public_prefixes` and waits for the create operation), `update_bucket` ★, `empty_bucket` ★,
+    `delete_bucket` ★ (supports `force`).
+  - Objects: `list_bucket_objects`, `get_bucket_object_meta`, `set_bucket_object_visibility` ★,
+    `restore_bucket_object_version`, `delete_bucket_objects` ★.
+  - Bucket rules: `get_bucket_cors`, `set_bucket_cors` ★, `get_bucket_lifecycle`,
+    `set_bucket_lifecycle` ★, `get_bucket_tags`, `set_bucket_tags` ★, `get_bucket_object_lock`,
+    `set_bucket_object_lock` ★.
+  - Cross-organization shares: `list_bucket_shares`, `create_bucket_share` ★,
+    `revoke_bucket_share` ★.
+  - Event notifications: `list_bucket_notifications`, `create_bucket_notification`,
+    `update_bucket_notification` ★, `delete_bucket_notification` ★.
+  - Custom domains: `list_bucket_domains`, `create_bucket_domain` ★, `update_bucket_domain` ★,
+    `delete_bucket_domain` ★.
+- Synced `x-destructive` route guards with the public API OpenAPI specification.
+
 ## v0.6.1 — 2026-11-25
 
 ### Changed

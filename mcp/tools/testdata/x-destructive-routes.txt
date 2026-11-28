@@ -1,21 +1,33 @@
 # Routes the public API marks x-destructive (an AI app key needs the delete
 # scope for them), from the OpenAPI document at
 # https://docs.pantechdynamics.com/openapi/public-api.yaml. Keep in sync with it.
+DELETE /buckets/{bucket_id}
+DELETE /buckets/{bucket_id}/domains/{domain_id}
+DELETE /buckets/{bucket_id}/notifications/{notification_id}
+DELETE /buckets/{bucket_id}/shares/{share_id}
 DELETE /certificates/{certificate_id}
 DELETE /databases/{database_id}
 DELETE /databases/{database_id}/snapshots/{snapshot_id}
 DELETE /dns/zones/{zone_id}
 DELETE /dns/zones/{zone_id}/records/{record_id}
+DELETE /email/domains/{email_domain_id}
+DELETE /email/sending-keys/{email_sending_key_id}
+DELETE /email/suppressions/{address}
 DELETE /firewall-rules/{rule_id}
+DELETE /functions/{function_id}
+DELETE /functions/{function_id}/keys/{key_id}
+DELETE /functions/{function_id}/schedules/{schedule_id}
 DELETE /iam/policies/{policy_id}
 DELETE /iam/teams/{team_id}
 DELETE /instances/{instance_id}
+DELETE /instances/{instance_id}/address-rotation
 DELETE /instances/{instance_id}/private-network
 DELETE /kubernetes-clusters/{cluster_id}
 DELETE /kubernetes-clusters/{cluster_id}/node-pools/{pool_id}
 DELETE /load-balancers/{load_balancer_id}
 DELETE /migrations/{migration_id}
 DELETE /networks/{network_id}
+DELETE /object-storage/keys/{storage_key_id}
 DELETE /port-forwarding-rules/{rule_id}
 DELETE /public-ips/{public_ip_id}
 DELETE /registry/repositories/{repository_id}
@@ -28,6 +40,8 @@ DELETE /subnets/{subnet_id}
 DELETE /volumes/{volume_id}
 DELETE /webhooks/{webhook_id}
 GET /domains/{domain_id}/auth-code
+POST /buckets/{bucket_id}/empty
+POST /buckets/{bucket_id}/objects/delete
 POST /certificates/{certificate_id}/export
 POST /certificates/{certificate_id}/revoke
 POST /domains/{domain_id}/auth-code
